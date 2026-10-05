@@ -10,9 +10,9 @@ An end-to-end quantitative machine learning pipeline and interactive Streamlit w
 - **Explicit Horizon Promise**: Predicts the next-day (24-hour horizon) close-to-close return direction ($r_{t+1} = \frac{\text{close}_{t+1} - \text{close}_t}{\text{close}_t}$) with zero temporal lookahead leakage.
 - **Quantitative Signal Engineering**: 52 feature signals combining technical indicators (RSI-14, MACD, EMAs, Parkinson Volatility, Bollinger %B, Stochastic %K/%D), multi-day sentiment momentum, and relative BTC/ETH return ratios.
 - **NLP Sentiment Integration**: FinBERT transformer sentiment pipeline processing financial news articles, calculating daily sentiment Z-Scores and sentiment-return interaction terms.
-- **Atomic Retraining Promotion Gate**: Candidate models stage in `models/staging/` and promote to production ONLY if validation performance passes metric gates.
-- **Pure Live Inference**: Live inference functions in memory by default (`save_to_history=False` performs zero file writes).
-- **Walk-Forward Trading Backtesting**: Realistic simulation with 0.10% (10 bps) transaction fees, position turnover, Sharpe ratio, Max Drawdown, and confidence-gated signal rules ($c \ge 0.45$).
+- **Atomic Retraining Promotion Gate**: Candidate models stage in `models/candidates/` and promote to production ONLY if validation performance beats the active model on validation F1 score.
+- **Pure Live Inference**: Live inference functions in memory by default (`save_prediction()` handles explicit user-triggered prediction logging).
+- **Walk-Forward Trading Backtesting**: Realistic simulation with 0.10% (10 bps) transaction fees, position turnover, Sharpe ratio, Max Drawdown, and 3-baseline comparisons (Always NEUTRAL, Naive Persistence, 5D Momentum).
 - **Evidence-Grounded GenAI Layer**: Synthesizes market observations into structured AI opinions with automated grounding validation.
 - **Interactive Streamlit Dashboard**: Live Binance WebSocket price streaming, CoinGecko market ranking, asset toggles (BTC/ETH), user-controlled auto-refresh, and explicit history logging.
 
@@ -31,10 +31,10 @@ crypto-market-analysis/
 │   └── raw/                   # Raw price daily CSVs & news Parquet archives
 ├── docs/                      # Quantitative design & architectural documentation
 ├── models/                    # Production models, scalers, candidate staging & versioned backups
-│   ├── staging/               # Staged candidate models evaluated during retraining
+│   ├── candidates/            # Staged candidate models evaluated during retraining
 │   ├── versions/              # Versioned model checkpoints & rejected candidates
-│   ├── predictive_model.joblib
-│   ├── predictive_scaler.joblib
+│   ├── predictive_model_btc.joblib
+│   ├── predictive_model_eth.joblib
 │   └── predictive_model_metadata.json
 ├── src/
 │   ├── genai/                 # Gemini API evidence packaging & grounding validation
@@ -42,7 +42,9 @@ crypto-market-analysis/
 │   ├── nlp/                   # FinBERT sentiment analysis & TF-IDF keyword extraction
 │   └── prediction/            # Feature engineering, model training, live inference, backtesting & retraining
 ├── tests/                     # Isolated unit test suite for prediction pipeline & leakage checks
-├── .gitignore                 # Version control exclusions
+├── .env.example               # Environment configuration template
+├── LICENSE                    # MIT License manifest
+├── MODEL_CARD.md              # Model card documentation & baseline comparisons
 ├── requirements.txt           # Python dependency manifest
 └── README.md                  # Project documentation
 ```
@@ -80,13 +82,13 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 ### Rebuild Feature Dataset, Train & Evaluate
 
 ```bash
-# 1. Build quantitative feature matrix (52 features with t+1 target return)
+# 1. Build quantitative feature matrix (52 features with t+1 target return for BTC & ETH)
 python -m src.prediction.feature_builder
 
-# 2. Train multi-model candidate suite with atomic staging & promotion gate
+# 2. Train multi-model candidate suite with atomic staging in models/candidates/ & promotion gate
 python -m src.prediction.train_predictive_model
 
-# 3. Run walk-forward trading evaluation & backtest simulation
+# 3. Run walk-forward trading evaluation & baseline comparison
 python -m src.prediction.evaluate_trading_performance
 ```
 
@@ -98,16 +100,21 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ---
 
-## 📊 Quantitative Performance & Trading Simulation
+## 📊 Quantitative Performance & Baseline Comparisons
 
-| Benchmark / Strategy | Total Return | Annualized Sharpe | Max Drawdown | Daily Turnover |
-| :--- | :---: | :---: | :---: | :---: |
-| **Buy & Hold Benchmark** | -1.58% | 0.18 | -39.53% | - |
-| **Majority Class Baseline** | 0.00% | 0.00 | 0.00% | 0.00 |
-| **Raw Un-gated Model Strategy** | -25.21% | -0.87 | -35.48% | 36.5% |
-| **Confidence-Gated Strategy ($c \ge 0.45$)** | **+1.70%** | **1.05** | **-0.10%** | **1.27%** |
+Out-of-sample held-out test evaluation results (315 daily samples, 2025–2026):
 
-*Key Finding: While raw directional accuracy is 40.95% (vs 33.33% random baseline), raw un-gated signals carry market noise. Applying confidence gating ($c \ge 0.45$) filters out low-conviction signals, dramatically reducing max drawdown from -39.53% to **-0.10%** and achieving a positive Sharpe Ratio of **+1.05** under 10 bps transaction fees.*
+| Benchmark / Strategy | Accuracy | Return (After 10 bps Fees) | Sharpe Ratio | Max Drawdown | Daily Turnover |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Always Predict NEUTRAL** | **46.35%** | 0.00% | 0.00 | 0.00% | 0.00 |
+| **Previous Day Direction (Persistence)** | 37.14% | -26.90% | -0.87 | -38.50% | 12.4% |
+| **Simple Momentum Rule (5D ROC)** | 27.62% | -19.70% | -0.42 | -29.10% | 18.2% |
+| **Buy & Hold Benchmark** | - | -1.58% | 0.18 | -39.53% | - |
+| **Raw Un-gated Model Strategy** | 36.19% | -22.78% | -0.61 | -35.95% | 36.5% |
+| **Confidence-Gated Strategy ($c \ge 0.45$)** | 36.19% | **-11.52%** | **-0.71** | **-20.07%** | **0.63%** |
+
+> ⚠️ **Cautious Interpretation & Research Note**:
+> Raw model directional accuracy (36.19% – 40.95%) remains below the Always-NEUTRAL baseline (46.35%). Confidence-gating ($c \ge 0.45$) serves as **promising exploratory research evidence**, demonstrating noise reduction and drawdown mitigation, but is **NOT proof of a tradable strategy** until validated across multiple out-of-sample market regimes.
 
 ---
 

@@ -39,14 +39,14 @@ def generate_live_prediction(asset="BTC"):
     scaler_path = MODELS_DIR / f"predictive_scaler_{asset_key.lower()}.joblib"
     metadata_path = MODELS_DIR / f"predictive_model_metadata_{asset_key.lower()}.json"
 
-    # Fallback to default single model if asset model does not exist
-    if not model_path.exists():
+    # For BTC default compatibility if asset-specific name is absent
+    if asset_key == "BTC" and not model_path.exists():
         model_path = MODELS_DIR / "predictive_model.joblib"
         scaler_path = MODELS_DIR / "predictive_scaler.joblib"
         metadata_path = MODELS_DIR / "predictive_model_metadata.json"
 
     if not model_path.exists():
-        raise FileNotFoundError(f"Trained model not found at: {model_path}. Train model first.")
+        raise FileNotFoundError(f"Trained {asset_key} model not found at: {model_path}. Please train {asset_key} model first.")
 
     model = joblib.load(model_path)
     scaler = joblib.load(scaler_path) if scaler_path.exists() else None
@@ -57,9 +57,13 @@ def generate_live_prediction(asset="BTC"):
             metadata = json.load(f)
 
     # 1. Load latest processed dataset row
-    dataset_file = DATA_DIR / (f"prediction_dataset_{asset_key.lower()}.csv" if (DATA_DIR / f"prediction_dataset_{asset_key.lower()}.csv").exists() else "prediction_dataset.csv")
+    if asset_key == "ETH":
+        dataset_file = DATA_DIR / "prediction_dataset_eth.csv"
+    else:
+        dataset_file = DATA_DIR / "prediction_dataset.csv"
+
     if not dataset_file.exists():
-        raise FileNotFoundError(f"Dataset file missing: {dataset_file}")
+        raise FileNotFoundError(f"Processed dataset for {asset_key} missing at: {dataset_file}. Build {asset_key} dataset first.")
 
     history_df = pd.read_csv(dataset_file)
     latest_hist = history_df.iloc[-1].to_dict()

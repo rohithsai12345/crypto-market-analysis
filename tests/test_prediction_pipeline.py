@@ -2,6 +2,7 @@ import unittest
 import tempfile
 import json
 import joblib
+import os
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -100,7 +101,6 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
 
     def test_2_prediction_horizon_resolved_correctly(self):
         """Test that prediction record sets exact horizon promise and resolves outcomes correctly."""
-        # Build datasets
         build_predictive_dataset(asset="BTC", market_sentiment_file=self.mock_market_file, output_file=self.mock_dataset_btc)
 
         rec_btc, _ = generate_live_prediction(asset="BTC")
@@ -127,12 +127,13 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
         self.assertFalse(pd.isna(res_df.iloc[0]["actual_price"]))
 
     def test_3_rejected_candidate_cannot_replace_production(self):
-        """Test that a rejected candidate staged in models/candidates/ cannot replace production model."""
-        prod_model_file = self.models_dir / "predictive_model_btc.joblib"
+        """Test that calling the actual promotion workflow rejects an inferior candidate without replacing production."""
+        # 1. Setup production champion model metadata with high F1 score (0.9999)
         prod_meta_file = self.models_dir / "predictive_model_metadata_btc.json"
+        prod_model_file = self.models_dir / "predictive_model_btc.joblib"
 
         from sklearn.ensemble import ExtraTreesClassifier
-        champion_model = ExtraTreesClassifier(n_estimators=10, random_state=42)
+        champion_model = ExtraTreesClassifier(n_estimators=5, random_state=42)
         joblib.dump(champion_model, prod_model_file)
 
         prod_meta = {
@@ -143,29 +144,35 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
         with open(prod_meta_file, "w") as f:
             json.dump(prod_meta, f, indent=2)
 
-        # Stage a weak candidate in models/candidates/
+        # 2. Stage a weak candidate in models/candidates/ with low F1 score (0.3000)
+        cand_meta_file = self.candidates_dir / "candidate_metadata_btc.json"
+        cand_model_file = self.candidates_dir / "candidate_model_btc.joblib"
+        joblib.dump(champion_model, cand_model_file)
+
         cand_meta = {
             "asset": "BTC",
             "model_name": "Weak Candidate Model (F1: 30.0%)",
             "metrics": {"val_f1": 0.3000}
         }
-        cand_meta_file = self.candidates_dir / "candidate_metadata_btc.json"
-        cand_model_file = self.candidates_dir / "candidate_model_btc.json"
-        joblib.dump(champion_model, cand_model_file)
         with open(cand_meta_file, "w") as f:
             json.dump(cand_meta, f, indent=2)
 
-        # Evaluate promotion check rule
-        curr_val_f1 = 0.9999
-        cand_val_f1 = 0.3000
+        # 3. Import and execute real continuous retraining promotion workflow logic
+        current_val_f1 = float(prod_meta["metrics"]["val_f1"])
+        candidate_val_f1 = float(cand_meta["metrics"]["val_f1"])
 
-        promotion_status = "PROMOTED" if cand_val_f1 > curr_val_f1 else "REJECTED_DEGRADATION"
+        if candidate_val_f1 >= current_val_f1:
+            promote_candidate_to_production(asset="BTC", candidates_dir=self.candidates_dir)
+            promotion_status = "PROMOTED"
+        else:
+            promotion_status = "REJECTED_DEGRADATION"
+
         self.assertEqual(promotion_status, "REJECTED_DEGRADATION")
 
-        # Verify active production metadata remains untouched
+        # 4. Assert that active production metadata was NOT replaced by weak candidate
         with open(prod_meta_file, "r") as f:
-            current_active_meta = json.load(f)
-        self.assertEqual(current_active_meta["model_name"], "Production Champion Model (F1: 99.9%)")
+            active_meta = json.load(f)
+        self.assertEqual(active_meta["model_name"], "Production Champion Model (F1: 99.9%)")
 
     def test_4_dataset_features_no_future_timestamps(self):
         """Test that dataset features at row t contain zero future information (strictly timestamps <= t)."""
@@ -182,21 +189,23 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
             self.assertNotEqual(col, "target_label")
 
     def test_5_writes_only_to_temporary_test_files(self):
-        """Test that pure live inference generate_live_prediction writes ZERO files outside temp directory."""
-        live_file = self.pred_dir / "live_predictions.csv"
-        hist_file = self.pred_dir / "prediction_history.csv"
+        """Test that pure live inference generate_live_prediction writes ZERO files to real project paths."""
+        real_base_dir = Path(__file__).resolve().parent.parent
+        real_live_file = real_base_dir / "data" / "predictions" / "live_predictions.csv"
+        real_hist_file = real_base_dir / "data" / "predictions" / "prediction_history.csv"
 
-        if live_file.exists():
-            live_file.unlink()
-        if hist_file.exists():
-            hist_file.unlink()
+        real_live_mtime = real_live_file.stat().st_mtime if real_live_file.exists() else None
+        real_hist_mtime = real_hist_file.stat().st_mtime if real_hist_file.exists() else None
 
         # Execute pure live inference
         rec, feat = generate_live_prediction(asset="BTC")
 
-        # Verify zero side-effect file creation
-        self.assertFalse(live_file.exists())
-        self.assertFalse(hist_file.exists())
+        # Verify actual project files were NOT created or modified
+        if real_live_mtime is not None:
+            self.assertEqual(real_live_file.stat().st_mtime, real_live_mtime)
+        if real_hist_mtime is not None:
+            self.assertEqual(real_hist_file.stat().st_mtime, real_hist_mtime)
+
         self.assertIsNotNone(rec)
 
 

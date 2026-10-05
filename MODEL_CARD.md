@@ -40,7 +40,8 @@ Out-of-sample held-out test evaluation results (315 daily samples):
 
 ---
 
-## 4. Key Takeaways & Limitations
-1. **Un-gated Noise vs Conviction Filtering**: Raw daily predictions carry market noise. Applying confidence gating ($c \ge 0.45$) suppresses low-conviction trades, drastically reducing max drawdown from -39.53% to **-0.10%** and achieving a positive Sharpe ratio of **1.05** under 0.10% (10 bps) fees & slippage.
-2. **Safety & MLOps**: Candidate models train in `models/candidates/` and undergo atomic validation checks before promoting to active production paths (`models/predictive_model_btc.joblib`, `models/predictive_model_eth.joblib`).
-3. **Non-Financial Advice Disclaimer**: This model card, codebase, and Streamlit dashboard are strictly built for quantitative research and educational demonstration purposes and do **NOT** constitute financial, trading, or investment advice.
+## 4. Key Takeaways, Cautious Framing & Limitations
+1. **Accuracy Baseline Context**: Raw model directional accuracy (36.19% – 40.95%) is below the Always-NEUTRAL baseline (46.35%). This highlights the difficulty of un-gated daily directional prediction in volatile crypto markets.
+2. **Research Evidence vs Live Edge**: Confidence-gating ($c \ge 0.45$) serves as **promising exploratory research evidence**, demonstrating noise suppression and drawdown reduction in backtests. However, it should **NOT be treated as proof of a tradable edge** until validated across multiple untouched out-of-sample time periods.
+3. **Safety & MLOps**: Candidate models train into `models/candidates/` and undergo atomic promotion gates (`candidate_val_f1 >= current_val_f1`) before replacing active production artifacts (`models/predictive_model_btc.joblib`, `models/predictive_model_eth.joblib`).
+4. **Non-Financial Advice Disclaimer**: This model card, codebase, and Streamlit dashboard are strictly built for quantitative research and educational demonstration purposes and do **NOT** constitute financial, trading, or investment advice.

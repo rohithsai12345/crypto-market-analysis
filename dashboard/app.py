@@ -159,19 +159,21 @@ with st.sidebar:
     st.divider()
     st.subheader("MLOps Actions", icon=":material/settings_suggest:")
 
-    if st.button("🔄 Run Live Prediction Now", width="stretch"):
+    mlops_asset = st.selectbox("MLOps Target Asset", options=["BTC", "ETH"], key="sidebar_mlops_asset")
+
+    if st.button(f"🔄 Run Live Prediction ({mlops_asset})", width="stretch"):
         try:
-            rec, _ = generate_live_prediction(asset="BTC")
+            rec, _ = generate_live_prediction(asset=mlops_asset)
             save_prediction(rec)
-            st.toast("Live prediction generated & logged!", icon="🔮")
+            st.toast(f"Live prediction generated & logged for {mlops_asset}!", icon="🔮")
         except Exception as err:
             st.error(f"Prediction failed: {err}")
 
-    if st.button("⚖️ Resolve Outcomes & Retrain", width="stretch"):
+    if st.button(f"⚖️ Resolve Outcomes & Retrain ({mlops_asset})", width="stretch"):
         try:
             res_df = resolve_pending_predictions()
-            ret_info = run_continuous_retraining()
-            st.toast(f"Retraining complete: {ret_info.get('promotion_status')}", icon="⚙️")
+            ret_info = run_continuous_retraining(asset=mlops_asset)
+            st.toast(f"Retraining complete for {mlops_asset}: {ret_info.get('promotion_status')}", icon="⚙️")
         except Exception as err:
             st.error(f"Retraining failed: {err}")
 
