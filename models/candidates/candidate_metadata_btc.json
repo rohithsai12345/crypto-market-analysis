@@ -2,7 +2,7 @@
   "asset": "BTC",
   "model_name": "XGBoost (Tuned)",
   "is_scaled": false,
-  "training_timestamp": "20261005_232416",
+  "training_timestamp": "20261006_003315",
   "prediction_horizon": "Predict BTC's next 24-hour direction",
   "bullish_threshold": 0.01,
   "bearish_threshold": -0.01,
@@ -73,5 +73,5 @@
     "test_precision": 0.37728867184813264,
     "test_recall": 0.3619047619047619
   },
-  "model_version": "model_btc_20261005_232416.joblib"
+  "model_version": "model_btc_20261006_003315.joblib"
 }

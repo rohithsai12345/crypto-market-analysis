@@ -8,7 +8,8 @@ from datetime import datetime
 from src.prediction.feature_builder import (
     FEATURE_COLUMNS_BTC,
     FEATURE_COLUMNS_ETH,
-    LABEL_TO_CLASS
+    LABEL_TO_CLASS,
+    compute_technical_indicators
 )
 
 try:
@@ -29,7 +30,8 @@ PRED_DIR.mkdir(parents=True, exist_ok=True)
 
 def generate_live_prediction(asset="BTC"):
     """
-    Pure live inference function. Fetches market data, builds feature vector, runs model prediction,
+    Pure live inference function. Fetches market data, recomputes technical indicators dynamically
+    from recent candles + live price feeds, uses model.classes_ for safe probability mapping,
     and returns (prediction_record, feature_snapshot) without writing any files to disk.
     """
     asset_key = asset.upper()
@@ -56,17 +58,17 @@ def generate_live_prediction(asset="BTC"):
         with open(metadata_path, "r") as f:
             metadata = json.load(f)
 
-    # 1. Load latest processed dataset row
-    if asset_key == "ETH":
-        dataset_file = DATA_DIR / "prediction_dataset_eth.csv"
-    else:
-        dataset_file = DATA_DIR / "prediction_dataset.csv"
+    # 1. Load recent market sentiment historical candles
+    market_file = DATA_DIR / "market_sentiment_analysis.csv"
+    if not market_file.exists():
+        market_file = DATA_DIR / ("prediction_dataset_eth.csv" if asset_key == "ETH" else "prediction_dataset.csv")
 
-    if not dataset_file.exists():
-        raise FileNotFoundError(f"Processed dataset for {asset_key} missing at: {dataset_file}. Build {asset_key} dataset first.")
+    if not market_file.exists():
+        raise FileNotFoundError(f"Historical market data missing for {asset_key} at: {market_file}")
 
-    history_df = pd.read_csv(dataset_file)
-    latest_hist = history_df.iloc[-1].to_dict()
+    recent_df = pd.read_csv(market_file).tail(100).copy()
+    recent_df["date"] = pd.to_datetime(recent_df["date"])
+    latest_hist = recent_df.iloc[-1].to_dict()
 
     # 2. Ingest real-time live market data
     now_dt = datetime.now()
@@ -99,44 +101,52 @@ def generate_live_prediction(asset="BTC"):
         except Exception:
             pass
 
-    # 3. Construct live feature dictionary
-    feature_dict = latest_hist.copy()
+    # 3. Append live observation row and recompute technical indicators dynamically
+    live_row = latest_hist.copy()
+    live_row["date"] = now_dt
     if asset_key == "ETH":
-        feature_dict["eth_close"] = live_price
-        feature_dict["eth_return"] = live_return
-        feature_dict["eth_volume"] = live_vol
-        feature_dict["eth_volatility"] = abs(live_return)
-        feature_dict["eth_return_lag_1"] = live_return
-        if feature_dict.get("btc_close", 0) > 0:
-            feature_dict["btc_eth_ratio_return"] = live_return
+        live_row["eth_close"] = live_price
+        live_row["eth_return"] = live_return
+        live_row["eth_volume"] = live_vol
     else:
-        feature_dict["btc_close"] = live_price
-        feature_dict["btc_return"] = live_return
-        feature_dict["btc_volume"] = live_vol
-        feature_dict["btc_volatility"] = abs(live_return)
+        live_row["btc_close"] = live_price
+        live_row["btc_return"] = live_return
+        live_row["btc_volume"] = live_vol
+
+    calc_df = pd.concat([recent_df, pd.DataFrame([live_row])], ignore_index=True)
+    calc_df = compute_technical_indicators(calc_df)
+
+    # Extract recomputed live feature dictionary
+    live_feature_row = calc_df.iloc[-1].to_dict()
+
+    if asset_key == "ETH":
+        live_feature_row["eth_volatility"] = abs(live_return)
+        live_feature_row["eth_return_lag_1"] = live_return
+    else:
+        live_feature_row["btc_volatility"] = abs(live_return)
+        live_feature_row["btc_return_lag_1"] = live_return
 
     default_schema = FEATURE_COLUMNS_ETH if asset_key == "ETH" else FEATURE_COLUMNS_BTC
     expected_cols = metadata.get("feature_schema", default_schema)
 
-    feature_vector = np.array([[feature_dict.get(col, 0.0) for col in expected_cols]])
+    feature_vector = np.array([[live_feature_row.get(col, 0.0) for col in expected_cols]])
 
     if metadata.get("is_scaled", True) and scaler is not None:
         feature_vector_scaled = scaler.transform(feature_vector)
     else:
         feature_vector_scaled = feature_vector
 
-    # 4. Predict probabilities & class
+    # 4. Predict probabilities & class safely using model.classes_
     pred_label = int(model.predict(feature_vector_scaled)[0])
     predicted_direction = LABEL_TO_CLASS.get(pred_label, "NEUTRAL")
 
     if hasattr(model, "predict_proba"):
         probabilities = model.predict_proba(feature_vector_scaled)[0]
-        if len(probabilities) == 3:
-            prob_bearish = float(probabilities[0])
-            prob_neutral = float(probabilities[1])
-            prob_bullish = float(probabilities[2])
-        else:
-            prob_bearish, prob_neutral, prob_bullish = 0.33, 0.34, 0.33
+        classes = getattr(model, "classes_", [0, 1, 2])
+        prob_map = {int(cls): float(prob) for cls, prob in zip(classes, probabilities)}
+        prob_bearish = prob_map.get(0, 0.33)
+        prob_neutral = prob_map.get(1, 0.34)
+        prob_bullish = prob_map.get(2, 0.33)
     else:
         prob_bearish = 1.0 if predicted_direction == "BEARISH" else 0.0
         prob_neutral = 1.0 if predicted_direction == "NEUTRAL" else 0.0
@@ -177,7 +187,7 @@ def generate_live_prediction(asset="BTC"):
     }
 
     # Zero side-effect file writes in generate_live_prediction
-    return prediction_record, feature_dict
+    return prediction_record, live_feature_row
 
 
 def save_prediction(prediction_record, history_file=None, live_file=None):

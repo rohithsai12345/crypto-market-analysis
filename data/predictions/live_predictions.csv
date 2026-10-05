@@ -1,2 +1,2 @@
 prediction_id,timestamp,asset,prediction_horizon,current_price,predicted_direction,prob_bullish,prob_neutral,prob_bearish,confidence,conviction_level,model_version,model_name,data_status,status,actual_price,actual_return,actual_direction,correct,resolution_timestamp
-ETH_20261005_232831,2026-10-05 23:28:31,ETH,Predict ETH's next 24-hour direction,2704.14,NEUTRAL,0.2853,0.4904,0.2243,0.4904,HIGH (Strong Signal),model_eth_20261005_232426.joblib,LightGBM (Tuned),LIVE,PENDING,,,,,
+ETH_20261006_003225,2026-10-06 00:32:25,ETH,Predict ETH's next 24-hour direction,2704.14,NEUTRAL,0.2853,0.4904,0.2243,0.4904,HIGH (Strong Signal),model_eth_20261005_232426.joblib,LightGBM (Tuned),LIVE,PENDING,,,,,

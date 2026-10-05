@@ -28,6 +28,18 @@
       "support": 88
     }
   },
+  "multi_period_cross_validation": {
+    "period_1_first_half": {
+      "date_range": "2025-11-23 \u2192 2026-04-28",
+      "return_pct": 10.7,
+      "sharpe_ratio": 0.78
+    },
+    "period_2_second_half": {
+      "date_range": "2026-04-29 \u2192 2026-10-03",
+      "return_pct": -3.17,
+      "sharpe_ratio": -0.39
+    }
+  },
   "trading_simulation_after_fees": {
     "transaction_fee_rate": 0.001,
     "buy_and_hold_return_pct": -3.5,

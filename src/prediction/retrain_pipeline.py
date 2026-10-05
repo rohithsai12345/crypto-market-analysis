@@ -18,7 +18,7 @@ VERSIONS_DIR = MODELS_DIR / "versions"
 CANDIDATES_DIR = MODELS_DIR / "candidates"
 
 
-def run_continuous_retraining(asset="BTC"):
+def run_continuous_retraining(asset="BTC", models_dir=None, candidates_dir=None, versions_dir=None, dataset_file=None, market_sentiment_file=None):
     """
     Executes periodic continuous retraining workflow for target asset:
     1. Re-builds predictive dataset with newly resolved labels.
@@ -30,12 +30,27 @@ def run_continuous_retraining(asset="BTC"):
     print(f"[{asset_key}] PERIODIC CONTINUOUS RETRAINING PIPELINE")
     print("=" * 70)
 
-    # 1. Rebuild feature dataset
+    target_models_dir = Path(models_dir) if models_dir else MODELS_DIR
+    target_candidates_dir = Path(candidates_dir) if candidates_dir else CANDIDATES_DIR
+    target_versions_dir = Path(versions_dir) if versions_dir else VERSIONS_DIR
+
+    target_models_dir.mkdir(parents=True, exist_ok=True)
+    target_candidates_dir.mkdir(parents=True, exist_ok=True)
+    target_versions_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Rebuild feature dataset if requested or default
     print(f"Step 1: Rebuilding feature dataset for {asset_key}...")
-    df_data = build_predictive_dataset(asset=asset_key)
+    if dataset_file is not None or market_sentiment_file is not None:
+        df_data = build_predictive_dataset(
+            asset=asset_key,
+            market_sentiment_file=market_sentiment_file if market_sentiment_file else DATA_DIR / "market_sentiment_analysis.csv",
+            output_file=dataset_file
+        )
+    else:
+        df_data = build_predictive_dataset(asset=asset_key)
 
     # 2. Check current production model metadata
-    metadata_path = MODELS_DIR / (f"predictive_model_metadata_{asset_key.lower()}.json" if asset_key == "ETH" else "predictive_model_metadata.json")
+    metadata_path = target_models_dir / (f"predictive_model_metadata_{asset_key.lower()}.json" if asset_key == "ETH" else "predictive_model_metadata.json")
     current_val_f1 = 0.0
 
     if metadata_path.exists():
@@ -47,7 +62,14 @@ def run_continuous_retraining(asset="BTC"):
 
     # 3. Train candidate model into models/candidates/
     print("Step 2: Training candidate model in models/candidates/...")
-    candidate_model, candidate_scaler, candidate_meta = train_and_select_predictive_model(asset=asset_key, promote_to_production=False)
+    candidate_model, candidate_scaler, candidate_meta = train_and_select_predictive_model(
+        asset=asset_key,
+        dataset_file=dataset_file,
+        promote_to_production=False,
+        models_dir=target_models_dir,
+        candidates_dir=target_candidates_dir,
+        versions_dir=target_versions_dir
+    )
     candidate_val_f1 = float(candidate_meta.get("metrics", {}).get("val_f1", 0.0))
 
     # 4. Model Promotion Gate Rule
@@ -60,11 +82,16 @@ def run_continuous_retraining(asset="BTC"):
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if candidate_val_f1 >= current_val_f1 or current_val_f1 == 0.0:
-        promote_candidate_to_production(asset=asset_key)
+        promote_candidate_to_production(
+            asset=asset_key,
+            candidates_dir=target_candidates_dir,
+            models_dir=target_models_dir,
+            versions_dir=target_versions_dir
+        )
         print(f"RESULT: PROMOTED! Candidate model passed promotion criteria for {asset_key}.")
         promotion_status = "PROMOTED"
     else:
-        rejected_path = VERSIONS_DIR / f"rejected_candidate_{asset_key.lower()}_{timestamp_str}.joblib"
+        rejected_path = target_versions_dir / f"rejected_candidate_{asset_key.lower()}_{timestamp_str}.joblib"
         joblib.dump(candidate_model, rejected_path)
         print(f"RESULT: REJECTED! Candidate model degraded validation performance ({candidate_val_f1 * 100:.2f}% vs {current_val_f1 * 100:.2f}%). Active production model retained.")
         promotion_status = "REJECTED_DEGRADATION"

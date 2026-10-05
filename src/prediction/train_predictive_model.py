@@ -46,13 +46,21 @@ VERSIONS_DIR.mkdir(parents=True, exist_ok=True)
 CANDIDATES_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def train_and_select_predictive_model(asset="BTC", dataset_file=None, promote_to_production=False):
+def train_and_select_predictive_model(asset="BTC", dataset_file=None, promote_to_production=False, models_dir=None, candidates_dir=None, versions_dir=None):
     """
     Trains hyperparameter-tuned candidate models for asset (BTC/ETH), evaluates validation performance,
     stages candidate model in models/candidates/, and optionally promotes to production if requested.
     """
     asset_key = asset.upper()
     feature_schema = FEATURE_COLUMNS_ETH if asset_key == "ETH" else FEATURE_COLUMNS_BTC
+
+    target_models_dir = Path(models_dir) if models_dir else MODELS_DIR
+    target_candidates_dir = Path(candidates_dir) if candidates_dir else CANDIDATES_DIR
+    target_versions_dir = Path(versions_dir) if versions_dir else VERSIONS_DIR
+
+    target_models_dir.mkdir(parents=True, exist_ok=True)
+    target_candidates_dir.mkdir(parents=True, exist_ok=True)
+    target_versions_dir.mkdir(parents=True, exist_ok=True)
 
     if dataset_file is None:
         dataset_file = DATA_DIR / ("prediction_dataset_eth.csv" if asset_key == "ETH" else "prediction_dataset.csv")
@@ -97,9 +105,9 @@ def train_and_select_predictive_model(asset="BTC", dataset_file=None, promote_to
     X_val_scaled = scaler.transform(X_val)
     X_test_scaled = scaler.transform(X_test)
 
-    class_counts = np.bincount(y_train)
+    class_counts = np.bincount(y_train, minlength=3)
     total_samples = len(y_train)
-    class_weights = total_samples / (len(class_counts) * class_counts)
+    class_weights = np.where(class_counts > 0, total_samples / (3.0 * class_counts), 1.0)
     sample_weights_train = np.array([class_weights[y] for y in y_train])
 
     rf_tuned = RandomForestClassifier(
@@ -178,9 +186,9 @@ def train_and_select_predictive_model(asset="BTC", dataset_file=None, promote_to
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    cand_model_path = CANDIDATES_DIR / f"candidate_model_{asset_key.lower()}.joblib"
-    cand_scaler_path = CANDIDATES_DIR / f"candidate_scaler_{asset_key.lower()}.joblib"
-    cand_metadata_path = CANDIDATES_DIR / f"candidate_metadata_{asset_key.lower()}.json"
+    cand_model_path = target_candidates_dir / f"candidate_model_{asset_key.lower()}.joblib"
+    cand_scaler_path = target_candidates_dir / f"candidate_scaler_{asset_key.lower()}.joblib"
+    cand_metadata_path = target_candidates_dir / f"candidate_metadata_{asset_key.lower()}.json"
 
     joblib.dump(best_model_obj, cand_model_path)
     joblib.dump(scaler, cand_scaler_path)
@@ -211,27 +219,31 @@ def train_and_select_predictive_model(asset="BTC", dataset_file=None, promote_to
 
     print(f"Staged candidate model into: {cand_model_path}", flush=True)
 
-    prod_model_path = MODELS_DIR / f"predictive_model_{asset_key.lower()}.joblib"
+    prod_model_path = target_models_dir / f"predictive_model_{asset_key.lower()}.joblib"
     if promote_to_production or not prod_model_path.exists():
-        promote_candidate_to_production(asset=asset_key)
+        promote_candidate_to_production(asset=asset_key, candidates_dir=target_candidates_dir, models_dir=target_models_dir, versions_dir=target_versions_dir)
 
     return best_model_obj, scaler, metadata
 
 
-def promote_candidate_to_production(asset="BTC", candidates_dir=None):
+def promote_candidate_to_production(asset="BTC", candidates_dir=None, models_dir=None, versions_dir=None):
     """
     Only copies a staged candidate into the production model path after passing promotion criteria.
     """
     asset_key = asset.upper()
-    if candidates_dir is None:
-        candidates_dir = CANDIDATES_DIR
+    cand_dir = Path(candidates_dir) if candidates_dir else CANDIDATES_DIR
+    prod_dir = Path(models_dir) if models_dir else MODELS_DIR
+    ver_dir = Path(versions_dir) if versions_dir else VERSIONS_DIR
 
-    cand_model_path = candidates_dir / f"candidate_model_{asset_key.lower()}.joblib"
-    cand_scaler_path = candidates_dir / f"candidate_scaler_{asset_key.lower()}.joblib"
-    cand_metadata_path = candidates_dir / f"candidate_metadata_{asset_key.lower()}.json"
+    prod_dir.mkdir(parents=True, exist_ok=True)
+    ver_dir.mkdir(parents=True, exist_ok=True)
+
+    cand_model_path = cand_dir / f"candidate_model_{asset_key.lower()}.joblib"
+    cand_scaler_path = cand_dir / f"candidate_scaler_{asset_key.lower()}.joblib"
+    cand_metadata_path = cand_dir / f"candidate_metadata_{asset_key.lower()}.json"
 
     if not cand_model_path.exists() or not cand_metadata_path.exists():
-        raise FileNotFoundError(f"Staged candidate files missing for {asset_key} in: {candidates_dir}")
+        raise FileNotFoundError(f"Staged candidate files missing for {asset_key} in: {cand_dir}")
 
     with open(cand_metadata_path, "r") as f:
         metadata = json.load(f)
@@ -239,11 +251,11 @@ def promote_candidate_to_production(asset="BTC", candidates_dir=None):
     timestamp_str = metadata.get("training_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
 
     # Production targets
-    prod_model_asset = MODELS_DIR / f"predictive_model_{asset_key.lower()}.joblib"
-    prod_scaler_asset = MODELS_DIR / f"predictive_scaler_{asset_key.lower()}.joblib"
-    prod_metadata_asset = MODELS_DIR / f"predictive_model_metadata_{asset_key.lower()}.json"
+    prod_model_asset = prod_dir / f"predictive_model_{asset_key.lower()}.joblib"
+    prod_scaler_asset = prod_dir / f"predictive_scaler_{asset_key.lower()}.joblib"
+    prod_metadata_asset = prod_dir / f"predictive_model_metadata_{asset_key.lower()}.json"
 
-    version_model_path = VERSIONS_DIR / f"model_{asset_key.lower()}_{timestamp_str}.joblib"
+    version_model_path = ver_dir / f"model_{asset_key.lower()}_{timestamp_str}.joblib"
 
     cand_model = joblib.load(cand_model_path)
     joblib.dump(cand_model, prod_model_asset)
@@ -258,10 +270,10 @@ def promote_candidate_to_production(asset="BTC", candidates_dir=None):
 
     # For BTC default compatibility
     if asset_key == "BTC":
-        joblib.dump(cand_model, MODELS_DIR / "predictive_model.joblib")
+        joblib.dump(cand_model, prod_dir / "predictive_model.joblib")
         if cand_scaler_path.exists():
-            joblib.dump(cand_scaler, MODELS_DIR / "predictive_scaler.joblib")
-        with open(MODELS_DIR / "predictive_model_metadata.json", "w") as f:
+            joblib.dump(cand_scaler, prod_dir / "predictive_scaler.joblib")
+        with open(prod_dir / "predictive_model_metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
 
     print(f"✅ Promoted [{asset_key}] candidate into production model path: {prod_model_asset}", flush=True)

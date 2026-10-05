@@ -2,7 +2,7 @@
   "asset": "ETH",
   "model_name": "LightGBM (Tuned)",
   "is_scaled": false,
-  "training_timestamp": "20261005_232426",
+  "training_timestamp": "20261006_003324",
   "prediction_horizon": "Predict ETH's next 24-hour direction",
   "bullish_threshold": 0.01,
   "bearish_threshold": -0.01,
@@ -73,5 +73,5 @@
     "test_precision": 0.41217193146811915,
     "test_recall": 0.4222222222222222
   },
-  "model_version": "model_eth_20261005_232426.joblib"
+  "model_version": "model_eth_20261006_003324.joblib"
 }

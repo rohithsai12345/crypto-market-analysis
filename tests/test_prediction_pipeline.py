@@ -43,10 +43,10 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
         # Create synthetic market sentiment dataset for testing
         dates = pd.date_range("2024-01-01", periods=100, freq="D")
         np.random.seed(42)
-        btc_close = 40000.0 + np.cumsum(np.random.normal(50, 200, 100))
-        eth_close = 2200.0 + np.cumsum(np.random.normal(5, 20, 100))
-        btc_return = np.insert(np.diff(btc_close) / btc_close[:-1], 0, 0.0)
-        eth_return = np.insert(np.diff(eth_close) / eth_close[:-1], 0, 0.0)
+        btc_return = np.random.uniform(-0.02, 0.02, 100)
+        eth_return = np.random.uniform(-0.02, 0.02, 100)
+        btc_close = 40000.0 * np.cumprod(1 + btc_return)
+        eth_close = 2200.0 * np.cumprod(1 + eth_return)
 
         df = pd.DataFrame({
             "date": dates,
@@ -129,48 +129,47 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
     def test_3_rejected_candidate_cannot_replace_production(self):
         """Test that calling the actual promotion workflow rejects an inferior candidate without replacing production."""
         # 1. Setup production champion model metadata with high F1 score (0.9999)
-        prod_meta_file = self.models_dir / "predictive_model_metadata_btc.json"
-        prod_model_file = self.models_dir / "predictive_model_btc.joblib"
+        prod_meta_file_btc = self.models_dir / "predictive_model_metadata_btc.json"
+        prod_meta_file_def = self.models_dir / "predictive_model_metadata.json"
+        prod_model_file_btc = self.models_dir / "predictive_model_btc.joblib"
+        prod_model_file_def = self.models_dir / "predictive_model.joblib"
 
         from sklearn.ensemble import ExtraTreesClassifier
         champion_model = ExtraTreesClassifier(n_estimators=5, random_state=42)
-        joblib.dump(champion_model, prod_model_file)
+        joblib.dump(champion_model, prod_model_file_btc)
+        joblib.dump(champion_model, prod_model_file_def)
 
         prod_meta = {
             "asset": "BTC",
             "model_name": "Production Champion Model (F1: 99.9%)",
             "metrics": {"val_f1": 0.9999}
         }
-        with open(prod_meta_file, "w") as f:
+        with open(prod_meta_file_btc, "w") as f:
+            json.dump(prod_meta, f, indent=2)
+        with open(prod_meta_file_def, "w") as f:
             json.dump(prod_meta, f, indent=2)
 
-        # 2. Stage a weak candidate in models/candidates/ with low F1 score (0.3000)
-        cand_meta_file = self.candidates_dir / "candidate_metadata_btc.json"
-        cand_model_file = self.candidates_dir / "candidate_model_btc.joblib"
-        joblib.dump(champion_model, cand_model_file)
+        # Build synthetic dataset in isolated test directory
+        build_predictive_dataset(
+            asset="BTC",
+            market_sentiment_file=self.mock_market_file,
+            output_file=self.mock_dataset_btc
+        )
 
-        cand_meta = {
-            "asset": "BTC",
-            "model_name": "Weak Candidate Model (F1: 30.0%)",
-            "metrics": {"val_f1": 0.3000}
-        }
-        with open(cand_meta_file, "w") as f:
-            json.dump(cand_meta, f, indent=2)
+        # 2. Call the full end-to-end continuous retraining workflow
+        summary = run_continuous_retraining(
+            asset="BTC",
+            models_dir=self.models_dir,
+            candidates_dir=self.candidates_dir,
+            versions_dir=self.versions_dir,
+            dataset_file=self.mock_dataset_btc,
+            market_sentiment_file=self.mock_market_file
+        )
 
-        # 3. Import and execute real continuous retraining promotion workflow logic
-        current_val_f1 = float(prod_meta["metrics"]["val_f1"])
-        candidate_val_f1 = float(cand_meta["metrics"]["val_f1"])
+        self.assertEqual(summary["promotion_status"], "REJECTED_DEGRADATION")
 
-        if candidate_val_f1 >= current_val_f1:
-            promote_candidate_to_production(asset="BTC", candidates_dir=self.candidates_dir)
-            promotion_status = "PROMOTED"
-        else:
-            promotion_status = "REJECTED_DEGRADATION"
-
-        self.assertEqual(promotion_status, "REJECTED_DEGRADATION")
-
-        # 4. Assert that active production metadata was NOT replaced by weak candidate
-        with open(prod_meta_file, "r") as f:
+        # 3. Assert that active production metadata was NOT replaced by weak candidate
+        with open(prod_meta_file_btc, "r") as f:
             active_meta = json.load(f)
         self.assertEqual(active_meta["model_name"], "Production Champion Model (F1: 99.9%)")
 
@@ -207,6 +206,28 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
             self.assertEqual(real_hist_file.stat().st_mtime, real_hist_mtime)
 
         self.assertIsNotNone(rec)
+
+    def test_6_pipeline_health_monitoring(self):
+        """Test that pipeline monitoring checks feed health, dataset freshness, and drift reporting cleanly."""
+        from src.prediction.monitor_pipeline import check_pipeline_health, check_model_drift
+
+        health = check_pipeline_health()
+        self.assertIn("overall_status", health)
+        self.assertIn("market_feeds", health)
+        self.assertIn("dataset_freshness", health)
+        self.assertIn("model_drift", health)
+
+        # Test model drift on a mock prediction history file in temporary folder
+        mock_hist_file = self.pred_dir / "prediction_history.csv"
+        df_hist = pd.DataFrame([
+            {"timestamp": f"2024-01-0{i}", "asset": "BTC", "predicted_label": "BULLISH", "actual_label": "BULLISH", "status": "RESOLVED"}
+            for i in range(1, 6)
+        ])
+        df_hist.to_csv(mock_hist_file, index=False)
+
+        drift = check_model_drift(history_file=mock_hist_file)
+        self.assertEqual(drift["status"], "MONITORING")
+        self.assertEqual(drift["rolling_accuracy"], 1.0)
 
 
 if __name__ == "__main__":

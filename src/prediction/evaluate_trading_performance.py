@@ -85,7 +85,12 @@ def evaluate_trading_and_investment_performance(
     y_pred = model.predict(X_test_scaled)
 
     if hasattr(model, "predict_proba"):
-        probabilities = model.predict_proba(X_test_scaled)
+        raw_probs = model.predict_proba(X_test_scaled)
+        classes = getattr(model, "classes_", [0, 1, 2])
+        probabilities = np.zeros((len(y_pred), 3))
+        for col_idx, cls in enumerate(classes):
+            if int(cls) in [0, 1, 2]:
+                probabilities[:, int(cls)] = raw_probs[:, col_idx]
     else:
         probabilities = np.zeros((len(y_pred), 3))
         for i, p in enumerate(y_pred):
@@ -163,6 +168,27 @@ def evaluate_trading_and_investment_performance(
         drawdowns = (equity_curve - running_max) / (running_max + 1e-9)
         return float(np.min(drawdowns))
 
+    # Multi-period Sub-split Validation to detect overfitting across sub-regimes
+    mid_idx = len(gated_strat_returns) // 2
+    period1_returns = gated_strat_returns[:mid_idx]
+    period2_returns = gated_strat_returns[mid_idx:]
+
+    p1_eq = np.cumprod(1 + period1_returns)
+    p2_eq = np.cumprod(1 + period2_returns)
+
+    multi_period_validation = {
+        "period_1_first_half": {
+            "date_range": f"{test_df.iloc[0]['date'].date()} → {test_df.iloc[mid_idx-1]['date'].date()}",
+            "return_pct": round(float(p1_eq[-1] - 1.0) * 100, 2),
+            "sharpe_ratio": round(calc_sharpe(period1_returns), 2)
+        },
+        "period_2_second_half": {
+            "date_range": f"{test_df.iloc[mid_idx]['date'].date()} → {test_df.iloc[-1]['date'].date()}",
+            "return_pct": round(float(p2_eq[-1] - 1.0) * 100, 2),
+            "sharpe_ratio": round(calc_sharpe(period2_returns), 2)
+        }
+    }
+
     results_summary = {
         "asset": asset_key,
         "test_sample_count": len(test_df),
@@ -174,6 +200,7 @@ def evaluate_trading_and_investment_performance(
             "simple_momentum_5d_roc": round(float(mom_acc), 4)
         },
         "per_class_performance": per_class_metrics,
+        "multi_period_cross_validation": multi_period_validation,
         "trading_simulation_after_fees": {
             "transaction_fee_rate": fee_rate,
             "buy_and_hold_return_pct": round(float(bnh_equity[-1] - 1.0) * 100, 2),
