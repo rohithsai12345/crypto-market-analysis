@@ -211,10 +211,15 @@ live_prices = live_feed.get_prices()
 # 🔮 LIVE MARKET PREDICTION & CONTINUOUS LEARNING
 # ============================================================
 
+# ============================================================
+# 🔮 LIVE MARKET PREDICTION & CONTINUOUS LEARNING
+# ============================================================
+
 with st.container(border=True):
     col_p_title, col_p_status = st.columns([3, 1])
     with col_p_title:
-        st.subheader("Live today's directional market prediction", icon=":material/online_prediction:")
+        st.subheader("Live next-day directional market prediction", icon=":material/online_prediction:")
+        st.caption("Predicting next 24-hour close-to-close return direction ($r_{t+1}$) with zero temporal lookahead leakage.")
     with col_p_status:
         st.badge("Predictive Model Active", icon=":material/smart_toy:", color="green")
 
@@ -227,7 +232,7 @@ with st.container(border=True):
     if not selected_asset:
         selected_asset = "BTC"
 
-    # Generate or load active live prediction for selected asset (BTC / ETH)
+    # Generate or load active live prediction for selected asset (BTC / ETH) - Pure in-memory by default
     try:
         pred_record, feature_snapshot = generate_live_prediction(asset=selected_asset, save_to_history=False)
     except Exception:
@@ -250,13 +255,20 @@ with st.container(border=True):
 
         c_pred1, c_pred2, c_pred3, c_pred4 = st.columns(4)
         with c_pred1:
-            st.metric("Predicted Today's Target", p_dir, delta=badge_str, border=True)
+            st.metric("Predicted Next-Day Target", p_dir, delta=badge_str, border=True)
         with c_pred2:
             st.metric("Probability Distribution", f"Bull: {p_bull:.1f}%", f"Neu: {p_neu:.1f}% | Bear: {p_bear:.1f}%", border=True)
         with c_pred3:
             st.metric("Model Confidence", f"{conf_pct:.1f}%", delta=pred_record.get("conviction_level", "MODERATE"), border=True)
         with c_pred4:
             st.metric("Model Engine", f"{pred_record.get('model_name', 'RF')}", pred_record.get("data_status", "LIVE"), border=True)
+
+        if st.button(f"💾 Save {selected_asset} Live Prediction to History", width="stretch"):
+            try:
+                generate_live_prediction(asset=selected_asset, save_to_history=True)
+                st.toast(f"Saved {selected_asset} prediction snapshot to history log!", icon="💾")
+            except Exception as err:
+                st.error(f"Failed to log prediction: {err}")
 
         # Gemini Explanation
         pred_evidence = build_prediction_evidence_package(pred_record, feature_snapshot)
@@ -267,7 +279,6 @@ with st.container(border=True):
         val_exp = validate_prediction_explanation_grounding(exp_text, pred_evidence)
         if val_exp.get("is_valid"):
             st.caption("✅ Grounding Validation: Factually consistent. Model probabilities strictly preserved.")
-
 
     else:
         st.info("Generating live predictive inference...", icon=":material/sync:")
@@ -290,7 +301,7 @@ with col_hist:
             hist_df = pd.read_csv(pred_hist_file).tail(15)
             if not hist_df.empty:
                 display_hist = hist_df[[
-                    "timestamp", "current_price", "predicted_direction",
+                    "timestamp", "asset", "current_price", "predicted_direction",
                     "actual_price", "actual_return", "actual_direction", "status", "correct"
                 ]].copy()
 
@@ -302,9 +313,10 @@ with col_hist:
                 st.dataframe(
                     display_hist,
                     hide_index=True,
-                    use_container_width=True,
+                    width="stretch",
                     column_config={
                         "timestamp": st.column_config.TextColumn("Timestamp"),
+                        "asset": st.column_config.TextColumn("Asset"),
                         "current_price": st.column_config.NumberColumn("Price ($)", format="$%,.2f"),
                         "predicted_direction": st.column_config.TextColumn("Predicted"),
                         "actual_price": st.column_config.NumberColumn("Actual ($)", format="$%,.2f"),
@@ -317,14 +329,14 @@ with col_hist:
 
 with col_eval:
     with st.container(border=True):
-        st.subheader("Predictive model performance", icon=":material/analytics:")
-        st.caption("Directional accuracy, precision, recall, and confusion matrix over test benchmark.")
+        st.subheader("Trading evaluation & backtest metrics", icon=":material/analytics:")
+        st.caption("Walk-forward out-of-sample trading performance, Sharpe ratio, drawdown, and baseline analysis.")
 
         eval_res = evaluate_prediction_performance()
         if eval_res:
             m1, m2, m3, m4 = st.columns(4)
             with m1:
-                st.metric("Accuracy", f"{eval_res.get('accuracy', 0.0) * 100:.1f}%", border=True)
+                st.metric("Model Accuracy", f"{eval_res.get('accuracy', 0.0) * 100:.1f}%", border=True)
             with m2:
                 st.metric("Precision", f"{eval_res.get('precision', 0.0) * 100:.1f}%", border=True)
             with m3:
@@ -332,7 +344,19 @@ with col_eval:
             with m4:
                 st.metric("F1-Score", f"{eval_res.get('f1_score', 0.0) * 100:.1f}%", border=True)
 
+            t_eval = eval_res.get("trading_evaluation", {}).get("trading_simulation", {})
+            if t_eval:
+                st.markdown("**Walk-Forward Trading Backtest vs Buy & Hold Benchmark (0.10% Fees)**")
+                tb1, tb2, tb3 = st.columns(3)
+                with tb1:
+                    st.metric("Gated Sharpe Ratio", f"{t_eval.get('gated_strategy_sharpe', 0.0):.2f}", f"Benchmark: {t_eval.get('benchmark_buy_and_hold_sharpe', 0.0):.2f}", border=True)
+                with tb2:
+                    st.metric("Max Drawdown", f"{t_eval.get('gated_strategy_mdd_pct', 0.0):.1f}%", f"Benchmark: {t_eval.get('benchmark_buy_and_hold_mdd_pct', 0.0):.1f}%", border=True)
+                with tb3:
+                    st.metric("Gated Strategy Return", f"{t_eval.get('gated_strategy_return_pct', 0.0):.1f}%", f"c ≥ {t_eval.get('gated_strategy_confidence_threshold', 0.45)}", border=True)
+
             if "confusion_matrix" in eval_res and eval_res.get("confusion_matrix"):
+                st.caption("Held-Out Test Set Confusion Matrix")
                 cm_arr = np.array(eval_res["confusion_matrix"])
                 labels = eval_res.get("labels", ["BEARISH", "NEUTRAL", "BULLISH"])
                 cm_df = pd.DataFrame(
@@ -340,7 +364,7 @@ with col_eval:
                     index=[f"True {l}" for l in labels],
                     columns=[f"Pred {l}" for l in labels]
                 )
-                st.dataframe(cm_df, hide_index=False, use_container_width=True)
+                st.dataframe(cm_df, hide_index=False, width="stretch")
 
 st.space("medium")
 

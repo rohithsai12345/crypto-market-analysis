@@ -55,13 +55,15 @@ def resolve_pending_predictions(
         if row.get("status") == "PENDING" or pd.isna(row.get("status")):
             pred_time = pd.to_datetime(row["timestamp"])
             curr_price = float(row["current_price"])
+            asset_key = str(row.get("asset", "BTC")).upper()
+            close_col = "eth_close" if asset_key == "ETH" else "btc_close"
 
             # Find data row matching prediction date or next available market day
             match_data = df_data[df_data["date"] >= pred_time.floor("D")].sort_values("date")
 
-            if len(match_data) >= 2:
+            if len(match_data) >= 2 and close_col in match_data.columns:
                 # Actual next day price
-                actual_price = float(match_data.iloc[1]["btc_close"])
+                actual_price = float(match_data.iloc[1][close_col])
                 actual_return = (actual_price - curr_price) / curr_price if curr_price > 0 else 0.0
 
                 actual_direction = classify_return(actual_return, bullish_thresh, bearish_thresh)

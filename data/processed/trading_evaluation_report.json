@@ -1,0 +1,67 @@
+{
+  "test_sample_count": 15,
+  "test_date_range": "2024-03-25 \u2192 2024-04-08",
+  "accuracy_model": 0.4667,
+  "accuracy_majority_baseline": 1.0,
+  "per_class_performance": {
+    "BEARISH": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0,
+      "support": 0
+    },
+    "NEUTRAL": {
+      "precision": 1.0,
+      "recall": 0.4667,
+      "f1_score": 0.6364,
+      "support": 15
+    },
+    "BULLISH": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0,
+      "support": 0
+    }
+  },
+  "calibration_log_loss": 0.0,
+  "trading_simulation": {
+    "transaction_fee_rate": 0.001,
+    "benchmark_buy_and_hold_return_pct": 1.41,
+    "benchmark_buy_and_hold_sharpe": 6.17,
+    "benchmark_buy_and_hold_mdd_pct": -0.88,
+    "raw_strategy_return_pct": -0.06,
+    "raw_strategy_sharpe": -0.27,
+    "raw_strategy_mdd_pct": -0.83,
+    "gated_strategy_confidence_threshold": 0.45,
+    "gated_strategy_return_pct": 0.0,
+    "gated_strategy_sharpe": 0.0,
+    "gated_strategy_mdd_pct": 0.0,
+    "position_turnover_daily": 0.0
+  },
+  "confidence_threshold_sweep": {
+    "c_thresh_0.33": {
+      "total_return": -0.06,
+      "sharpe_ratio": -0.27,
+      "max_drawdown": -0.83,
+      "active_trade_pct": 53.33
+    },
+    "c_thresh_0.38": {
+      "total_return": 0.0,
+      "sharpe_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "active_trade_pct": 0.0
+    },
+    "c_thresh_0.45": {
+      "total_return": 0.0,
+      "sharpe_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "active_trade_pct": 0.0
+    },
+    "c_thresh_0.5": {
+      "total_return": 0.0,
+      "sharpe_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "active_trade_pct": 0.0
+    }
+  }
+}

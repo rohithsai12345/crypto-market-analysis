@@ -57,34 +57,53 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
     history_df = pd.read_csv(dataset_file)
     latest_hist = history_df.iloc[-1].to_dict()
 
-    # 2. Ingest real-time live platform data
+    # 2. Ingest real-time live platform data (Asset specific)
     now_dt = datetime.now()
     now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    live_price = float(latest_hist.get("btc_close", 107287.80))
-    live_return = float(latest_hist.get("btc_return", 0.0))
-    live_vol = float(latest_hist.get("btc_volume", 50000000000))
+    asset_key = asset.upper()
+    if asset_key == "ETH":
+        hist_prefix = "eth_"
+        coingecko_key = "ethereum"
+        default_price = 3300.0
+    else:
+        hist_prefix = "btc_"
+        coingecko_key = "bitcoin"
+        default_price = 107287.80
+
+    live_price = float(latest_hist.get(f"{hist_prefix}close", default_price))
+    live_return = float(latest_hist.get(f"{hist_prefix}return", 0.0))
+    live_vol = float(latest_hist.get(f"{hist_prefix}volume", 15000000000))
     is_live = False
 
     if callable(get_live_market_data):
         try:
             mkt = get_live_market_data()
-            if mkt.get("bitcoin", {}).get("usd"):
-                live_price = float(mkt["bitcoin"]["usd"])
-                if mkt["bitcoin"].get("usd_24h_change"):
-                    live_return = float(mkt["bitcoin"]["usd_24h_change"]) / 100.0
-                if mkt["bitcoin"].get("usd_24h_vol"):
-                    live_vol = float(mkt["bitcoin"]["usd_24h_vol"])
+            if mkt.get(coingecko_key, {}).get("usd"):
+                live_price = float(mkt[coingecko_key]["usd"])
+                if mkt[coingecko_key].get("usd_24h_change"):
+                    live_return = float(mkt[coingecko_key]["usd_24h_change"]) / 100.0
+                if mkt[coingecko_key].get("usd_24h_vol"):
+                    live_vol = float(mkt[coingecko_key]["usd_24h_vol"])
                 is_live = True
         except Exception:
             pass
 
     # 3. Construct live feature vector strictly matching FEATURE_COLUMNS
     feature_dict = latest_hist.copy()
-    feature_dict["btc_close"] = live_price
-    feature_dict["btc_return"] = live_return
-    feature_dict["btc_volume"] = live_vol
-    feature_dict["btc_volatility"] = abs(live_return)
+    if asset_key == "ETH":
+        feature_dict["eth_close"] = live_price
+        feature_dict["eth_return"] = live_return
+        feature_dict["eth_volume"] = live_vol
+        feature_dict["eth_return_lag_1"] = live_return
+        if feature_dict.get("btc_close", 0) > 0:
+            ratio = feature_dict["btc_close"] / (live_price + 1e-9)
+            feature_dict["btc_eth_ratio_return"] = live_return
+    else:
+        feature_dict["btc_close"] = live_price
+        feature_dict["btc_return"] = live_return
+        feature_dict["btc_volume"] = live_vol
+        feature_dict["btc_volatility"] = abs(live_return)
 
     # Extract feature values array matching the exact feature schema of the trained model
     expected_cols = metadata.get("feature_schema", FEATURE_COLUMNS)
@@ -129,8 +148,8 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
     prediction_record = {
         "prediction_id": pred_id,
         "timestamp": now_str,
-        "asset": asset,
-        "prediction_horizon": "Today (Same-Day)",
+        "asset": asset_key,
+        "prediction_horizon": "Next-Day (24H Close-to-Close)",
         "current_price": round(live_price, 2),
         "predicted_direction": predicted_direction,
         "prob_bullish": round(prob_bullish, 4),
@@ -149,12 +168,11 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
         "resolution_timestamp": np.nan
     }
 
-    # Save active snapshot to live_predictions.csv
-    live_df = pd.DataFrame([prediction_record])
-    live_df.to_csv(PRED_DIR / "live_predictions.csv", index=False)
-
-    # Maintain single active PENDING row in prediction_history.csv
+    # Only mutate disk files when save_to_history is explicitly enabled
     if save_to_history:
+        live_df = pd.DataFrame([prediction_record])
+        live_df.to_csv(PRED_DIR / "live_predictions.csv", index=False)
+
         history_file = PRED_DIR / "prediction_history.csv"
         if history_file.exists():
             existing_hist = pd.read_csv(history_file)
@@ -165,7 +183,7 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
                     existing_hist[c] = existing_hist[c].astype(object)
 
             # Check if an active PENDING prediction exists for this asset
-            pending_mask = (existing_hist["asset"] == asset) & (existing_hist["status"] == "PENDING")
+            pending_mask = (existing_hist["asset"] == asset_key) & (existing_hist["status"] == "PENDING")
             if pending_mask.any():
                 # Update single active pending row in-place with latest price & prediction
                 last_pending_idx = existing_hist[pending_mask].index[-1]

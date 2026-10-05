@@ -233,21 +233,19 @@ def build_predictive_dataset(
     df["news_volume_change_7d"] = df["news_count"].pct_change(7).fillna(0).replace([np.inf, -np.inf], 0)
     df["btc_volume_change_7d"] = df["btc_volume"].pct_change(7).fillna(0).replace([np.inf, -np.inf], 0)
 
-    # 4. Target Generation (Today's Return) - Feature matrix lagged by 1 step for zero-leakage same-day prediction
-    df["target_direction"] = df["btc_return"].apply(
+    # 4. Target Generation (Next-Day t+1 Return)
+    # Target return is the market return on date t+1 relative to observation at date t
+    df["target_return"] = df["btc_return"].shift(-1)
+    df["target_direction"] = df["target_return"].apply(
         lambda r: classify_return(r, bullish_thresh, bearish_thresh)
     )
     df["target_label"] = df["target_direction"].map(CLASS_TO_LABEL)
 
-    # Shift feature columns by 1 to use prior signals to predict today's target direction
-    feature_df = df[FEATURE_COLUMNS].shift(1)
-    feature_df["date"] = df["date"]
-    feature_df["btc_close"] = df["btc_close"]
-    feature_df["target_return"] = df["btc_return"]
-    feature_df["target_direction"] = df["target_direction"]
-    feature_df["target_label"] = df["target_label"]
+    # Feature matrix at time t uses features up to t to predict target return at t+1
+    feature_cols = ["date", "btc_close", "eth_close", "target_return", "target_direction", "target_label"] + FEATURE_COLUMNS
+    feature_df = df[feature_cols].copy()
 
-    # Drop initial rows missing lag/rolling features
+    # Drop initial rows missing lag/rolling features, and last row missing t+1 label
     feature_clean_df = feature_df.dropna(subset=FEATURE_COLUMNS + ["target_direction"]).copy()
 
     # Save complete dataset

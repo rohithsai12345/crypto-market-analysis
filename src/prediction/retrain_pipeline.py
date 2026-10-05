@@ -6,7 +6,10 @@ from pathlib import Path
 from datetime import datetime
 
 from src.prediction.feature_builder import build_predictive_dataset
-from src.prediction.train_predictive_model import train_and_select_predictive_model
+from src.prediction.train_predictive_model import (
+    train_and_select_predictive_model,
+    promote_candidate_to_production
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BASE_DIR / "data" / "processed"
@@ -18,7 +21,7 @@ def run_continuous_retraining():
     """
     Executes periodic continuous retraining workflow:
     1. Re-builds predictive dataset with newly resolved labels.
-    2. Trains new candidate models.
+    2. Trains new candidate models in staging area.
     3. Promotes candidate model ONLY if validation performance does NOT degrade.
     """
     print("=" * 70)
@@ -40,23 +43,30 @@ def run_continuous_retraining():
 
     print(f"Current Production Model Validation F1: {current_val_f1 * 100:.2f}%")
 
-    # 3. Train candidate model
-    print("Step 2: Training candidate model on updated dataset...")
-    candidate_model, candidate_scaler, candidate_meta = train_and_select_predictive_model()
+    # 3. Train staged candidate model without touching production files
+    print("Step 2: Training candidate model in staging storage...")
+    candidate_model, candidate_scaler, candidate_meta = train_and_select_predictive_model(promote_to_production=False)
     candidate_val_f1 = float(candidate_meta.get("metrics", {}).get("val_f1", 0.0))
 
-    # 4. Model Promotion Rule
+    # 4. Model Promotion Gate Rule
     print("\n" + "=" * 70)
     print("MODEL PROMOTION RULE EVALUATION")
     print("=" * 70)
     print(f"Candidate Model F1 : {candidate_val_f1 * 100:.2f}%")
     print(f"Current Model F1   : {current_val_f1 * 100:.2f}%")
 
-    if candidate_val_f1 >= (current_val_f1 - 0.01):
-        print("RESULT: PROMOTED! Candidate model passed promotion criteria.")
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if candidate_val_f1 >= (current_val_f1 - 0.005):
+        promote_candidate_to_production()
+        print("RESULT: PROMOTED! Candidate model passed atomic promotion criteria.")
         promotion_status = "PROMOTED"
     else:
-        print("RESULT: REJECTED! Candidate model degraded validation performance. Retaining current production model.")
+        # Retain candidate model in version history for audit, but preserve active production model
+        rejected_path = VERSIONS_DIR / f"rejected_candidate_{timestamp_str}.joblib"
+        joblib.dump(candidate_model, rejected_path)
+        print(f"RESULT: REJECTED! Candidate model degraded validation performance ({candidate_val_f1 * 100:.2f}% vs {current_val_f1 * 100:.2f}%). Production model retained intact.")
+        print(f"Rejected candidate saved to: {rejected_path}")
         promotion_status = "REJECTED_DEGRADATION"
 
     retrain_summary = {
@@ -64,7 +74,7 @@ def run_continuous_retraining():
         "promotion_status": promotion_status,
         "current_val_f1": current_val_f1,
         "candidate_val_f1": candidate_val_f1,
-        "promoted_model_version": candidate_meta.get("model_version")
+        "promoted_model_version": candidate_meta.get("model_version") if promotion_status == "PROMOTED" else None
     }
 
     return retrain_summary

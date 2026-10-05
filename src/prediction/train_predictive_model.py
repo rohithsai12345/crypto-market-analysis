@@ -48,7 +48,7 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 VERSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def train_and_select_predictive_model(dataset_file=None):
+def train_and_select_predictive_model(dataset_file=None, promote_to_production=False):
     """
     Trains an expanded suite of hyperparameter-tuned predictive models (Tuned Random Forest,
     ExtraTrees, Tuned XGBoost, Tuned LightGBM, HistGradientBoosting, Stacking Meta-Learner, Soft Voting)
@@ -277,19 +277,17 @@ def train_and_select_predictive_model(dataset_file=None):
     print("Test Classification Report:", flush=True)
     print(classification_report(y_test, y_test_pred, target_names=["BEARISH", "NEUTRAL", "BULLISH"], zero_division=0), flush=True)
 
-    # Save artifacts
+    # Save artifacts into candidate staging area first
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    staging_dir = MODELS_DIR / "staging"
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
-    model_path = MODELS_DIR / "predictive_model.joblib"
-    current_model_path = MODELS_DIR / "current_model.joblib"
-    version_model_path = VERSIONS_DIR / f"model_{timestamp_str}.joblib"
-    scaler_path = MODELS_DIR / "predictive_scaler.joblib"
-    metadata_path = MODELS_DIR / "predictive_model_metadata.json"
+    cand_model_path = staging_dir / "candidate_model.joblib"
+    cand_scaler_path = staging_dir / "candidate_scaler.joblib"
+    cand_metadata_path = staging_dir / "candidate_metadata.json"
 
-    joblib.dump(best_model_obj, model_path)
-    joblib.dump(best_model_obj, current_model_path)
-    joblib.dump(best_model_obj, version_model_path)
-    joblib.dump(scaler, scaler_path)
+    joblib.dump(best_model_obj, cand_model_path)
+    joblib.dump(scaler, cand_scaler_path)
 
     metadata = {
         "model_name": best_model_name,
@@ -318,17 +316,62 @@ def train_and_select_predictive_model(dataset_file=None):
         "model_version": f"model_{timestamp_str}.joblib"
     }
 
-    with open(metadata_path, "w") as f:
+    with open(cand_metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"\nModel artifacts saved:", flush=True)
-    print(f"- {model_path}", flush=True)
-    print(f"- {scaler_path}", flush=True)
-    print(f"- {metadata_path}", flush=True)
-    print(f"- {version_model_path}", flush=True)
+    print(f"\nCandidate model staged at: {cand_model_path}", flush=True)
+
+    # If promotion is requested or no production model exists, promote candidate immediately
+    prod_model_path = MODELS_DIR / "predictive_model.joblib"
+    if promote_to_production or not prod_model_path.exists():
+        promote_candidate_to_production(staging_dir=staging_dir)
 
     return best_model_obj, scaler, metadata
 
 
+def promote_candidate_to_production(staging_dir=None):
+    """
+    Atomically promotes staged candidate model files into active production storage.
+    """
+    if staging_dir is None:
+        staging_dir = MODELS_DIR / "staging"
+
+    cand_model_path = staging_dir / "candidate_model.joblib"
+    cand_scaler_path = staging_dir / "candidate_scaler.joblib"
+    cand_metadata_path = staging_dir / "candidate_metadata.json"
+
+    if not cand_model_path.exists() or not cand_metadata_path.exists():
+        raise FileNotFoundError(f"Staged candidate artifacts not found in: {staging_dir}")
+
+    with open(cand_metadata_path, "r") as f:
+        metadata = json.load(f)
+
+    timestamp_str = metadata.get("training_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
+
+    prod_model_path = MODELS_DIR / "predictive_model.joblib"
+    current_model_path = MODELS_DIR / "current_model.joblib"
+    version_model_path = VERSIONS_DIR / f"model_{timestamp_str}.joblib"
+    prod_scaler_path = MODELS_DIR / "predictive_scaler.joblib"
+    prod_metadata_path = MODELS_DIR / "predictive_model_metadata.json"
+
+    cand_model = joblib.load(cand_model_path)
+    joblib.dump(cand_model, prod_model_path)
+    joblib.dump(cand_model, current_model_path)
+    joblib.dump(cand_model, version_model_path)
+
+    if cand_scaler_path.exists():
+        cand_scaler = joblib.load(cand_scaler_path)
+        joblib.dump(cand_scaler, prod_scaler_path)
+
+    with open(prod_metadata_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    print(f"\n✅ PROMOTED CANDIDATE MODEL TO PRODUCTION:", flush=True)
+    print(f"- Production Model : {prod_model_path}", flush=True)
+    print(f"- Versioned Backup  : {version_model_path}", flush=True)
+    print(f"- Model Metadata    : {prod_metadata_path}", flush=True)
+    return metadata
+
+
 if __name__ == "__main__":
-    train_and_select_predictive_model()
+    train_and_select_predictive_model(promote_to_production=True)

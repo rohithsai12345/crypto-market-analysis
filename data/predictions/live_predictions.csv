@@ -1,2 +1,2 @@
 prediction_id,timestamp,asset,prediction_horizon,current_price,predicted_direction,prob_bullish,prob_neutral,prob_bearish,confidence,conviction_level,model_version,model_name,data_status,status,actual_price,actual_return,actual_direction,correct,resolution_timestamp
-BTC_20261005_184448,2026-10-05 18:44:48,BTC,Today (Same-Day),86126.2,NEUTRAL,0.2927,0.4132,0.2941,0.4132,MODERATE (Clear Trend),model_20261005_183428.joblib,ExtraTrees (Tuned),LIVE,PENDING,,,,,
+BTC_20261005_225009,2026-10-05 22:50:09,BTC,Today (Same-Day),85324.68,NEUTRAL,0.298,0.4207,0.2812,0.4207,MODERATE (Clear Trend),model_20261005_183428.joblib,ExtraTrees (Tuned),LIVE,PENDING,,,,,

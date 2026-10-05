@@ -97,7 +97,12 @@ def evaluate_prediction_performance(history_file=None, min_live_samples=10):
             cm = confusion_matrix(y_true_str, y_pred_str, labels=labels)
 
             acc = accuracy_score(y_true_str, y_pred_str)
-            prec, rec, f1, _ = precision_recall_fscore_support(y_true_str, y_pred_str, average="weighted", zero_division=0)
+            # Integrate full quantitative trading evaluation metrics if available
+            trading_report_file = DATA_DIR / "trading_evaluation_report.json"
+            trading_data = {}
+            if trading_report_file.exists():
+                with open(trading_report_file, "r") as f:
+                    trading_data = json.load(f)
 
             return {
                 "total_predictions": total_count,
@@ -111,7 +116,8 @@ def evaluate_prediction_performance(history_file=None, min_live_samples=10):
                 "f1_score": round(float(f1), 4),
                 "confusion_matrix": cm.tolist(),
                 "labels": labels,
-                "source": "HELD_OUT_TEST_SET"
+                "source": "HELD_OUT_TEST_SET",
+                "trading_evaluation": trading_data
             }
         except Exception as err:
             print(f"Error computing test evaluation: {err}")
