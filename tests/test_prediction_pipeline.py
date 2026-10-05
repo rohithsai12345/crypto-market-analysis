@@ -20,6 +20,50 @@ from src.genai.validate_summary import validate_prediction_explanation_grounding
 
 class TestPredictionPipeline(unittest.TestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        """Ensure predictive dataset and model artifacts exist for test execution."""
+        base_dir = Path(__file__).resolve().parent.parent
+        models_dir = base_dir / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        model_path = models_dir / "predictive_model.joblib"
+        scaler_path = models_dir / "predictive_scaler.joblib"
+        metadata_path = models_dir / "predictive_model_metadata.json"
+
+        dataset_file = base_dir / "data" / "processed" / "prediction_dataset.csv"
+        if not dataset_file.exists():
+            build_predictive_dataset()
+
+        if not model_path.exists() or not scaler_path.exists():
+            import joblib
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.preprocessing import StandardScaler
+
+            df = pd.read_csv(dataset_file).dropna(subset=["target_label"])
+            X = df[FEATURE_COLUMNS].values
+            y = df["target_label"].astype(int).values
+
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+
+            model = RandomForestClassifier(n_estimators=10, random_state=42)
+            model.fit(X_scaled, y)
+
+            joblib.dump(model, model_path)
+            joblib.dump(scaler, scaler_path)
+
+            if not metadata_path.exists():
+                import json
+                meta = {
+                    "model_name": "RandomForest (Test Fast)",
+                    "is_scaled": True,
+                    "training_timestamp": "test",
+                    "feature_schema": FEATURE_COLUMNS,
+                    "class_mapping": {"BEARISH": 0, "NEUTRAL": 1, "BULLISH": 2}
+                }
+                with open(metadata_path, "w") as f:
+                    json.dump(meta, f, indent=2)
+
     def test_1_target_generation(self):
         """Test target classification thresholds (+1.0% bullish, -1.0% bearish)."""
         self.assertEqual(classify_return(0.025), "BULLISH")
