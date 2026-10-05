@@ -55,7 +55,7 @@ crypto-market-analysis/
 Ensure Python 3.10+ is installed:
 
 ```bash
-git clone https://github.com/your-username/crypto-market-analysis.git
+git clone https://github.com/rohithsai12345/crypto-market-analysis.git
 cd crypto-market-analysis
 
 python3 -m venv .venv
