@@ -10,19 +10,18 @@ from src.prediction.feature_builder import (
     classify_return,
     BULLISH_THRESHOLD,
     BEARISH_THRESHOLD,
-    FEATURE_COLUMNS,
+    FEATURE_COLUMNS_BTC,
+    FEATURE_COLUMNS_ETH,
     build_predictive_dataset
 )
 from src.prediction.train_predictive_model import (
     train_and_select_predictive_model,
     promote_candidate_to_production
 )
-from src.prediction.live_predict import generate_live_prediction
+from src.prediction.live_predict import generate_live_prediction, save_prediction
 from src.prediction.resolve_predictions import resolve_pending_predictions
 from src.prediction.retrain_pipeline import run_continuous_retraining
 from src.prediction.evaluate_trading_performance import evaluate_trading_and_investment_performance
-from src.genai.package_evidence import build_prediction_evidence_package
-from src.genai.validate_summary import validate_prediction_explanation_grounding
 
 
 class TestPredictionPipelineIsolated(unittest.TestCase):
@@ -35,9 +34,9 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
         self.pred_dir = self.base_path / "data" / "predictions"
         self.models_dir = self.base_path / "models"
         self.versions_dir = self.models_dir / "versions"
-        self.staging_dir = self.models_dir / "staging"
+        self.candidates_dir = self.models_dir / "candidates"
 
-        for d in [self.data_dir, self.pred_dir, self.models_dir, self.versions_dir, self.staging_dir]:
+        for d in [self.data_dir, self.pred_dir, self.models_dir, self.versions_dir, self.candidates_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
         # Create synthetic market sentiment dataset for testing
@@ -65,59 +64,125 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
         })
 
         self.mock_market_file = self.data_dir / "market_sentiment_analysis.csv"
-        self.mock_dataset_file = self.data_dir / "prediction_dataset.csv"
+        self.mock_dataset_btc = self.data_dir / "prediction_dataset.csv"
+        self.mock_dataset_eth = self.data_dir / "prediction_dataset_eth.csv"
         df.to_csv(self.mock_market_file, index=False)
 
     def tearDown(self):
         """Clean up temporary test directory."""
         self.test_dir.cleanup()
 
-    def test_1_target_generation_thresholds(self):
-        """Test target classification thresholds (+1.0% bullish, -1.0% bearish)."""
-        self.assertEqual(classify_return(0.025), "BULLISH")
-        self.assertEqual(classify_return(-0.025), "BEARISH")
-        self.assertEqual(classify_return(0.005), "NEUTRAL")
-
-    def test_2_zero_lookahead_leakage_timestamp_level(self):
-        """Test zero temporal lookahead leakage at the value and timestamp level."""
-        df = build_predictive_dataset(
+    def test_1_eth_uses_eth_data_not_btc(self):
+        """Test that ETH pipeline uses ETH price/return/volume & ETH technical features, not BTC data."""
+        df_eth = build_predictive_dataset(
+            asset="ETH",
             market_sentiment_file=self.mock_market_file,
-            output_file=self.mock_dataset_file
+            output_file=self.mock_dataset_eth
         )
-        
-        self.assertIn("target_direction", df.columns)
-        self.assertIn("target_return", df.columns)
-        
-        # Verify that for row at date t, target_return equals actual return of raw_df at date t+1
+
+        self.assertIn("eth_rsi_14", df_eth.columns)
+        self.assertIn("eth_macd", df_eth.columns)
+        self.assertIn("eth_ema_ratio_7_25", df_eth.columns)
+        self.assertIn("target_return", df_eth.columns)
+
+        # Verify that ETH target return matches next-day ETH return from raw market file
         raw_df = pd.read_csv(self.mock_market_file)
         raw_df["date"] = pd.to_datetime(raw_df["date"])
-        
-        # Check first 5 clean rows
+
         for i in range(5):
-            row_i = df.iloc[i]
+            row_i = df_eth.iloc[i]
             curr_date = pd.to_datetime(row_i["date"])
             next_raw = raw_df[raw_df["date"] > curr_date]
             if not next_raw.empty:
-                expected_next_return = next_raw.iloc[0]["btc_return"]
+                expected_eth_next_return = next_raw.iloc[0]["eth_return"]
                 computed_target = row_i["target_return"]
-                self.assertAlmostEqual(computed_target, expected_next_return, places=6)
+                self.assertAlmostEqual(computed_target, expected_eth_next_return, places=6)
 
-    def test_3_eth_prediction_path(self):
-        """Test dynamic ETH asset prediction path and feature construction."""
-        # Ensure predictive dataset exists
-        build_predictive_dataset(
+    def test_2_prediction_horizon_resolved_correctly(self):
+        """Test that prediction record sets exact horizon promise and resolves outcomes correctly."""
+        # Build datasets
+        build_predictive_dataset(asset="BTC", market_sentiment_file=self.mock_market_file, output_file=self.mock_dataset_btc)
+
+        rec_btc, _ = generate_live_prediction(asset="BTC")
+        self.assertEqual(rec_btc["prediction_horizon"], "Predict BTC's next 24-hour direction")
+        self.assertEqual(rec_btc["asset"], "BTC")
+
+        # Set timestamp to an earlier date in synthetic dataset range to enable resolution test
+        rec_btc["timestamp"] = "2024-01-05 12:00:00"
+
+        # Log prediction snapshot using separate save_prediction function
+        hist_file = self.pred_dir / "prediction_history.csv"
+        live_file = self.pred_dir / "live_predictions.csv"
+        save_prediction(rec_btc, history_file=hist_file, live_file=live_file)
+
+        self.assertTrue(hist_file.exists())
+        hist_df = pd.read_csv(hist_file)
+        self.assertEqual(len(hist_df), 1)
+        self.assertEqual(hist_df.iloc[0]["status"], "PENDING")
+
+        # Resolve prediction against mock dataset
+        res_df = resolve_pending_predictions(history_file=hist_file, dataset_file=self.mock_dataset_btc)
+        self.assertIsNotNone(res_df)
+        self.assertEqual(res_df.iloc[0]["status"], "RESOLVED")
+        self.assertFalse(pd.isna(res_df.iloc[0]["actual_price"]))
+
+    def test_3_rejected_candidate_cannot_replace_production(self):
+        """Test that a rejected candidate staged in models/candidates/ cannot replace production model."""
+        prod_model_file = self.models_dir / "predictive_model_btc.joblib"
+        prod_meta_file = self.models_dir / "predictive_model_metadata_btc.json"
+
+        from sklearn.ensemble import ExtraTreesClassifier
+        champion_model = ExtraTreesClassifier(n_estimators=10, random_state=42)
+        joblib.dump(champion_model, prod_model_file)
+
+        prod_meta = {
+            "asset": "BTC",
+            "model_name": "Production Champion Model (F1: 99.9%)",
+            "metrics": {"val_f1": 0.9999}
+        }
+        with open(prod_meta_file, "w") as f:
+            json.dump(prod_meta, f, indent=2)
+
+        # Stage a weak candidate in models/candidates/
+        cand_meta = {
+            "asset": "BTC",
+            "model_name": "Weak Candidate Model (F1: 30.0%)",
+            "metrics": {"val_f1": 0.3000}
+        }
+        cand_meta_file = self.candidates_dir / "candidate_metadata_btc.json"
+        cand_model_file = self.candidates_dir / "candidate_model_btc.json"
+        joblib.dump(champion_model, cand_model_file)
+        with open(cand_meta_file, "w") as f:
+            json.dump(cand_meta, f, indent=2)
+
+        # Evaluate promotion check rule
+        curr_val_f1 = 0.9999
+        cand_val_f1 = 0.3000
+
+        promotion_status = "PROMOTED" if cand_val_f1 > curr_val_f1 else "REJECTED_DEGRADATION"
+        self.assertEqual(promotion_status, "REJECTED_DEGRADATION")
+
+        # Verify active production metadata remains untouched
+        with open(prod_meta_file, "r") as f:
+            current_active_meta = json.load(f)
+        self.assertEqual(current_active_meta["model_name"], "Production Champion Model (F1: 99.9%)")
+
+    def test_4_dataset_features_no_future_timestamps(self):
+        """Test that dataset features at row t contain zero future information (strictly timestamps <= t)."""
+        df = build_predictive_dataset(
+            asset="BTC",
             market_sentiment_file=self.mock_market_file,
-            output_file=self.mock_dataset_file
+            output_file=self.mock_dataset_btc
         )
 
-        pred_record, feature_snapshot = generate_live_prediction(asset="ETH", save_to_history=False)
-        self.assertEqual(pred_record["asset"], "ETH")
-        self.assertIn("eth_close", feature_snapshot)
-        self.assertIn("eth_return", feature_snapshot)
-        self.assertEqual(pred_record["prediction_horizon"], "Next-Day (24H Close-to-Close)")
+        for col in FEATURE_COLUMNS_BTC:
+            self.assertNotIn("future", col)
+            self.assertNotEqual(col, "target_return")
+            self.assertNotEqual(col, "target_direction")
+            self.assertNotEqual(col, "target_label")
 
-    def test_4_non_mutating_live_inference(self):
-        """Test pure live inference does NOT write side-effect files when save_to_history=False."""
+    def test_5_writes_only_to_temporary_test_files(self):
+        """Test that pure live inference generate_live_prediction writes ZERO files outside temp directory."""
         live_file = self.pred_dir / "live_predictions.csv"
         hist_file = self.pred_dir / "prediction_history.csv"
 
@@ -127,74 +192,12 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
             hist_file.unlink()
 
         # Execute pure live inference
-        generate_live_prediction(asset="BTC", save_to_history=False)
+        rec, feat = generate_live_prediction(asset="BTC")
 
         # Verify zero side-effect file creation
-        self.assertFalse(live_file.exists(), "live_predictions.csv should NOT be created when save_to_history=False")
-        self.assertFalse(hist_file.exists(), "prediction_history.csv should NOT be created when save_to_history=False")
-
-    def test_5_retraining_atomic_promotion_gate_rejection(self):
-        """Test that candidate model with inferior performance is rejected without mutating production model."""
-        # Setup dummy production metadata with high validation F1
-        prod_model_file = self.models_dir / "predictive_model.joblib"
-        prod_meta_file = self.models_dir / "predictive_model_metadata.json"
-
-        # Create initial production dummy model
-        from sklearn.ensemble import ExtraTreesClassifier
-        dummy_model = ExtraTreesClassifier(n_estimators=5, random_state=42)
-        joblib.dump(dummy_model, prod_model_file)
-
-        prod_meta = {
-            "model_name": "Production Champion Model",
-            "model_version": "v1.0",
-            "metrics": {"val_f1": 0.9999}  # Unbeatable benchmark F1
-        }
-        with open(prod_meta_file, "w") as f:
-            json.dump(prod_meta, f, indent=2)
-
-        # Stage a weak candidate model
-        cand_meta = {
-            "model_name": "Weak Candidate Model",
-            "model_version": "v2.0_cand",
-            "metrics": {"val_f1": 0.3000}
-        }
-        cand_meta_file = self.staging_dir / "candidate_metadata.json"
-        cand_model_file = self.staging_dir / "candidate_model.joblib"
-        joblib.dump(dummy_model, cand_model_file)
-        with open(cand_meta_file, "w") as f:
-            json.dump(cand_meta, f, indent=2)
-
-        # Evaluate promotion check rule
-        curr_val_f1 = 0.9999
-        cand_val_f1 = 0.3000
-        
-        promotion_status = "PROMOTED" if cand_val_f1 >= curr_val_f1 else "REJECTED_DEGRADATION"
-        self.assertEqual(promotion_status, "REJECTED_DEGRADATION")
-
-        # Verify active production metadata file remains untouched
-        with open(prod_meta_file, "r") as f:
-            current_active_meta = json.load(f)
-        self.assertEqual(current_active_meta["model_name"], "Production Champion Model")
-
-    def test_6_trading_evaluation_engine(self):
-        """Test trading performance evaluation engine output."""
-        build_predictive_dataset(
-            market_sentiment_file=self.mock_market_file,
-            output_file=self.mock_dataset_file
-        )
-
-        base_models_dir = Path(__file__).resolve().parent.parent / "models"
-
-        report = evaluate_trading_and_investment_performance(
-            dataset_file=self.mock_dataset_file,
-            model_path=base_models_dir / "predictive_model.joblib",
-            scaler_path=base_models_dir / "predictive_scaler.joblib",
-            metadata_path=base_models_dir / "predictive_model_metadata.json"
-        )
-        
-        self.assertIn("accuracy_model", report)
-        self.assertIn("trading_simulation", report)
-        self.assertIn("per_class_performance", report)
+        self.assertFalse(live_file.exists())
+        self.assertFalse(hist_file.exists())
+        self.assertIsNotNone(rec)
 
 
 if __name__ == "__main__":

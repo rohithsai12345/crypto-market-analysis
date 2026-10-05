@@ -15,25 +15,27 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BASE_DIR / "data" / "processed"
 MODELS_DIR = BASE_DIR / "models"
 VERSIONS_DIR = MODELS_DIR / "versions"
+CANDIDATES_DIR = MODELS_DIR / "candidates"
 
 
-def run_continuous_retraining():
+def run_continuous_retraining(asset="BTC"):
     """
-    Executes periodic continuous retraining workflow:
+    Executes periodic continuous retraining workflow for target asset:
     1. Re-builds predictive dataset with newly resolved labels.
-    2. Trains new candidate models in staging area.
-    3. Promotes candidate model ONLY if validation performance does NOT degrade.
+    2. Trains candidate models in models/candidates/.
+    3. Promotes candidate model ONLY if validation performance beats current production model.
     """
+    asset_key = asset.upper()
     print("=" * 70)
-    print("PERIODIC CONTINUOUS RETRAINING PIPELINE")
+    print(f"[{asset_key}] PERIODIC CONTINUOUS RETRAINING PIPELINE")
     print("=" * 70)
 
     # 1. Rebuild feature dataset
-    print("Step 1: Rebuilding feature dataset with latest observations...")
-    df_data = build_predictive_dataset()
+    print(f"Step 1: Rebuilding feature dataset for {asset_key}...")
+    df_data = build_predictive_dataset(asset=asset_key)
 
-    # 2. Check current model metadata
-    metadata_path = MODELS_DIR / "predictive_model_metadata.json"
+    # 2. Check current production model metadata
+    metadata_path = MODELS_DIR / (f"predictive_model_metadata_{asset_key.lower()}.json" if asset_key == "ETH" else "predictive_model_metadata.json")
     current_val_f1 = 0.0
 
     if metadata_path.exists():
@@ -41,36 +43,35 @@ def run_continuous_retraining():
             meta = json.load(f)
             current_val_f1 = float(meta.get("metrics", {}).get("val_f1", 0.0))
 
-    print(f"Current Production Model Validation F1: {current_val_f1 * 100:.2f}%")
+    print(f"Current Production Model Validation F1 [{asset_key}]: {current_val_f1 * 100:.2f}%")
 
-    # 3. Train staged candidate model without touching production files
-    print("Step 2: Training candidate model in staging storage...")
-    candidate_model, candidate_scaler, candidate_meta = train_and_select_predictive_model(promote_to_production=False)
+    # 3. Train candidate model into models/candidates/
+    print("Step 2: Training candidate model in models/candidates/...")
+    candidate_model, candidate_scaler, candidate_meta = train_and_select_predictive_model(asset=asset_key, promote_to_production=False)
     candidate_val_f1 = float(candidate_meta.get("metrics", {}).get("val_f1", 0.0))
 
     # 4. Model Promotion Gate Rule
     print("\n" + "=" * 70)
-    print("MODEL PROMOTION RULE EVALUATION")
+    print(f"MODEL PROMOTION RULE EVALUATION [{asset_key}]")
     print("=" * 70)
     print(f"Candidate Model F1 : {candidate_val_f1 * 100:.2f}%")
     print(f"Current Model F1   : {current_val_f1 * 100:.2f}%")
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    if candidate_val_f1 >= (current_val_f1 - 0.005):
-        promote_candidate_to_production()
-        print("RESULT: PROMOTED! Candidate model passed atomic promotion criteria.")
+    if candidate_val_f1 >= current_val_f1 or current_val_f1 == 0.0:
+        promote_candidate_to_production(asset=asset_key)
+        print(f"RESULT: PROMOTED! Candidate model passed promotion criteria for {asset_key}.")
         promotion_status = "PROMOTED"
     else:
-        # Retain candidate model in version history for audit, but preserve active production model
-        rejected_path = VERSIONS_DIR / f"rejected_candidate_{timestamp_str}.joblib"
+        rejected_path = VERSIONS_DIR / f"rejected_candidate_{asset_key.lower()}_{timestamp_str}.joblib"
         joblib.dump(candidate_model, rejected_path)
-        print(f"RESULT: REJECTED! Candidate model degraded validation performance ({candidate_val_f1 * 100:.2f}% vs {current_val_f1 * 100:.2f}%). Production model retained intact.")
-        print(f"Rejected candidate saved to: {rejected_path}")
+        print(f"RESULT: REJECTED! Candidate model degraded validation performance ({candidate_val_f1 * 100:.2f}% vs {current_val_f1 * 100:.2f}%). Active production model retained.")
         promotion_status = "REJECTED_DEGRADATION"
 
     retrain_summary = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "asset": asset_key,
         "promotion_status": promotion_status,
         "current_val_f1": current_val_f1,
         "candidate_val_f1": candidate_val_f1,
@@ -81,4 +82,5 @@ def run_continuous_retraining():
 
 
 if __name__ == "__main__":
-    run_continuous_retraining()
+    run_continuous_retraining(asset="BTC")
+    run_continuous_retraining(asset="ETH")

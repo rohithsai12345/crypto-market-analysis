@@ -1,0 +1,47 @@
+{
+  "asset": "ETH",
+  "test_sample_count": 315,
+  "test_date_range": "2025-11-23 \u2192 2026-10-03",
+  "accuracy_model": 0.4222,
+  "baselines_accuracy": {
+    "always_neutral": 0.4159,
+    "previous_day_persistence": 0.3492,
+    "simple_momentum_5d_roc": 0.3048
+  },
+  "per_class_performance": {
+    "BEARISH": {
+      "precision": 0.3719,
+      "recall": 0.4688,
+      "f1_score": 0.4147,
+      "support": 96
+    },
+    "NEUTRAL": {
+      "precision": 0.4774,
+      "recall": 0.5649,
+      "f1_score": 0.5175,
+      "support": 131
+    },
+    "BULLISH": {
+      "precision": 0.359,
+      "recall": 0.1591,
+      "f1_score": 0.2205,
+      "support": 88
+    }
+  },
+  "trading_simulation_after_fees": {
+    "transaction_fee_rate": 0.001,
+    "buy_and_hold_return_pct": -3.5,
+    "buy_and_hold_sharpe": 0.24,
+    "buy_and_hold_mdd_pct": -53.27,
+    "naive_persistence_return_pct": -0.35,
+    "naive_persistence_sharpe": 0.23,
+    "simple_momentum_return_pct": -55.2,
+    "simple_momentum_sharpe": -1.28,
+    "raw_model_return_pct": 36.38,
+    "raw_model_sharpe": 1.01,
+    "raw_model_mdd_pct": -27.99,
+    "gated_strategy_return_pct": 7.2,
+    "gated_strategy_sharpe": 0.41,
+    "gated_strategy_mdd_pct": -20.1
+  }
+}

@@ -6,21 +6,18 @@ from pathlib import Path
 from datetime import datetime
 
 from src.prediction.feature_builder import (
-    FEATURE_COLUMNS,
-    BULLISH_THRESHOLD,
-    BEARISH_THRESHOLD,
-    LABEL_TO_CLASS,
-    CLASS_TO_LABEL
+    FEATURE_COLUMNS_BTC,
+    FEATURE_COLUMNS_ETH,
+    LABEL_TO_CLASS
 )
 
 try:
-    from dashboard.services.market_api import get_live_market_data, get_live_coin_market
+    from dashboard.services.market_api import get_live_market_data
 except ImportError:
     try:
-        from services.market_api import get_live_market_data, get_live_coin_market
+        from services.market_api import get_live_market_data
     except ImportError:
         get_live_market_data = None
-        get_live_coin_market = None
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BASE_DIR / "data" / "processed"
@@ -30,45 +27,54 @@ MODELS_DIR = BASE_DIR / "models"
 PRED_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def generate_live_prediction(asset="BTC", save_to_history=False):
+def generate_live_prediction(asset="BTC"):
     """
-    Infers real-time market prediction using trained model and live data schema.
-    Maintains a single active prediction row per asset for the active period.
-    When 24-hour time completes, that row is updated with actual outcomes.
+    Pure live inference function. Fetches market data, builds feature vector, runs model prediction,
+    and returns (prediction_record, feature_snapshot) without writing any files to disk.
     """
-    model_path = MODELS_DIR / "predictive_model.joblib"
-    scaler_path = MODELS_DIR / "predictive_scaler.joblib"
-    metadata_path = MODELS_DIR / "predictive_model_metadata.json"
+    asset_key = asset.upper()
+
+    # Asset specific model selection
+    model_path = MODELS_DIR / f"predictive_model_{asset_key.lower()}.joblib"
+    scaler_path = MODELS_DIR / f"predictive_scaler_{asset_key.lower()}.joblib"
+    metadata_path = MODELS_DIR / f"predictive_model_metadata_{asset_key.lower()}.json"
+
+    # Fallback to default single model if asset model does not exist
+    if not model_path.exists():
+        model_path = MODELS_DIR / "predictive_model.joblib"
+        scaler_path = MODELS_DIR / "predictive_scaler.joblib"
+        metadata_path = MODELS_DIR / "predictive_model_metadata.json"
 
     if not model_path.exists():
-        raise FileNotFoundError(f"Model file not found: {model_path}. Please train model first.")
+        raise FileNotFoundError(f"Trained model not found at: {model_path}. Train model first.")
 
     model = joblib.load(model_path)
     scaler = joblib.load(scaler_path) if scaler_path.exists() else None
 
-    with open(metadata_path, "r") as f:
-        metadata = json.load(f)
+    metadata = {}
+    if metadata_path.exists():
+        with open(metadata_path, "r") as f:
+            metadata = json.load(f)
 
-    # 1. Load latest processed dataset row to obtain historical feature baselines
-    dataset_file = DATA_DIR / "prediction_dataset.csv"
+    # 1. Load latest processed dataset row
+    dataset_file = DATA_DIR / (f"prediction_dataset_{asset_key.lower()}.csv" if (DATA_DIR / f"prediction_dataset_{asset_key.lower()}.csv").exists() else "prediction_dataset.csv")
     if not dataset_file.exists():
         raise FileNotFoundError(f"Dataset file missing: {dataset_file}")
 
     history_df = pd.read_csv(dataset_file)
     latest_hist = history_df.iloc[-1].to_dict()
 
-    # 2. Ingest real-time live platform data (Asset specific)
+    # 2. Ingest real-time live market data
     now_dt = datetime.now()
     now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    asset_key = asset.upper()
     if asset_key == "ETH":
-        hist_prefix = "eth_"
         coingecko_key = "ethereum"
+        hist_prefix = "eth_"
         default_price = 3300.0
     else:
-        hist_prefix = "btc_"
         coingecko_key = "bitcoin"
+        hist_prefix = "btc_"
         default_price = 107287.80
 
     live_price = float(latest_hist.get(f"{hist_prefix}close", default_price))
@@ -89,15 +95,15 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
         except Exception:
             pass
 
-    # 3. Construct live feature vector strictly matching FEATURE_COLUMNS
+    # 3. Construct live feature dictionary
     feature_dict = latest_hist.copy()
     if asset_key == "ETH":
         feature_dict["eth_close"] = live_price
         feature_dict["eth_return"] = live_return
         feature_dict["eth_volume"] = live_vol
+        feature_dict["eth_volatility"] = abs(live_return)
         feature_dict["eth_return_lag_1"] = live_return
         if feature_dict.get("btc_close", 0) > 0:
-            ratio = feature_dict["btc_close"] / (live_price + 1e-9)
             feature_dict["btc_eth_ratio_return"] = live_return
     else:
         feature_dict["btc_close"] = live_price
@@ -105,11 +111,11 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
         feature_dict["btc_volume"] = live_vol
         feature_dict["btc_volatility"] = abs(live_return)
 
-    # Extract feature values array matching the exact feature schema of the trained model
-    expected_cols = metadata.get("feature_schema", FEATURE_COLUMNS)
+    default_schema = FEATURE_COLUMNS_ETH if asset_key == "ETH" else FEATURE_COLUMNS_BTC
+    expected_cols = metadata.get("feature_schema", default_schema)
+
     feature_vector = np.array([[feature_dict.get(col, 0.0) for col in expected_cols]])
 
-    # Scale if required by model
     if metadata.get("is_scaled", True) and scaler is not None:
         feature_vector_scaled = scaler.transform(feature_vector)
     else:
@@ -121,7 +127,6 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
 
     if hasattr(model, "predict_proba"):
         probabilities = model.predict_proba(feature_vector_scaled)[0]
-        # Standardize probability mapping order: BEARISH (0), NEUTRAL (1), BULLISH (2)
         if len(probabilities) == 3:
             prob_bearish = float(probabilities[0])
             prob_neutral = float(probabilities[1])
@@ -135,7 +140,6 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
 
     confidence = max(prob_bullish, prob_neutral, prob_bearish)
 
-    # Conviction tier mapping
     if confidence >= 0.45:
         conviction_level = "HIGH (Strong Signal)"
     elif confidence >= 0.38:
@@ -143,13 +147,13 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
     else:
         conviction_level = "LOW (Market Noise)"
 
-    pred_id = f"{asset}_{now_dt.strftime('%Y%m%d_%H%M%S')}"
+    pred_id = f"{asset_key}_{now_dt.strftime('%Y%m%d_%H%M%S')}"
 
     prediction_record = {
         "prediction_id": pred_id,
         "timestamp": now_str,
         "asset": asset_key,
-        "prediction_horizon": "Next-Day (24H Close-to-Close)",
+        "prediction_horizon": f"Predict {asset_key}'s next 24-hour direction",
         "current_price": round(live_price, 2),
         "predicted_direction": predicted_direction,
         "prob_bullish": round(prob_bullish, 4),
@@ -168,38 +172,46 @@ def generate_live_prediction(asset="BTC", save_to_history=False):
         "resolution_timestamp": np.nan
     }
 
-    # Only mutate disk files when save_to_history is explicitly enabled
-    if save_to_history:
-        live_df = pd.DataFrame([prediction_record])
-        live_df.to_csv(PRED_DIR / "live_predictions.csv", index=False)
-
-        history_file = PRED_DIR / "prediction_history.csv"
-        if history_file.exists():
-            existing_hist = pd.read_csv(history_file)
-
-            # Ensure necessary object columns exist
-            for c in ["actual_direction", "actual_price", "actual_return", "correct", "resolution_timestamp", "conviction_level"]:
-                if c in existing_hist.columns:
-                    existing_hist[c] = existing_hist[c].astype(object)
-
-            # Check if an active PENDING prediction exists for this asset
-            pending_mask = (existing_hist["asset"] == asset_key) & (existing_hist["status"] == "PENDING")
-            if pending_mask.any():
-                # Update single active pending row in-place with latest price & prediction
-                last_pending_idx = existing_hist[pending_mask].index[-1]
-                for key, val in prediction_record.items():
-                    existing_hist.at[last_pending_idx, key] = val
-                combined_hist = existing_hist
-            else:
-                # Active prediction was resolved; append new PENDING prediction row for next period
-                combined_hist = pd.concat([existing_hist, live_df], ignore_index=True)
-        else:
-            combined_hist = live_df
-
-        combined_hist.to_csv(history_file, index=False)
-
+    # Zero side-effect file writes in generate_live_prediction
     return prediction_record, feature_dict
 
 
+def save_prediction(prediction_record, history_file=None, live_file=None):
+    """
+    Explicitly logs a prediction record to live_predictions.csv and prediction_history.csv.
+    Called ONLY when the user clicks 'Log prediction'.
+    """
+    if history_file is None:
+        history_file = PRED_DIR / "prediction_history.csv"
+    if live_file is None:
+        live_file = PRED_DIR / "live_predictions.csv"
+
+    live_df = pd.DataFrame([prediction_record])
+    live_df.to_csv(live_file, index=False)
+
+    if Path(history_file).exists():
+        existing_hist = pd.read_csv(history_file)
+        for c in ["actual_direction", "actual_price", "actual_return", "correct", "resolution_timestamp", "conviction_level"]:
+            if c in existing_hist.columns:
+                existing_hist[c] = existing_hist[c].astype(object)
+
+        asset_key = prediction_record["asset"]
+        pending_mask = (existing_hist["asset"] == asset_key) & (existing_hist["status"] == "PENDING")
+        if pending_mask.any():
+            last_pending_idx = existing_hist[pending_mask].index[-1]
+            for key, val in prediction_record.items():
+                existing_hist.at[last_pending_idx, key] = val
+            combined_hist = existing_hist
+        else:
+            combined_hist = pd.concat([existing_hist, live_df], ignore_index=True)
+    else:
+        combined_hist = live_df
+
+    combined_hist.to_csv(history_file, index=False)
+    print(f"Logged prediction to: {history_file}")
+    return combined_hist
+
+
 if __name__ == "__main__":
-    generate_live_prediction(save_to_history=True)
+    rec, feat = generate_live_prediction(asset="BTC")
+    save_prediction(rec)
