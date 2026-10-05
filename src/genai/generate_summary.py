@@ -3,6 +3,30 @@ import json
 from pathlib import Path
 from src.genai.package_evidence import build_evidence_package, build_live_evidence_package, build_prediction_evidence_package
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+
+def get_gemini_api_key(api_key=None):
+    """
+    Retrieves Gemini API Key from explicit argument, os.environ (including loaded .env),
+    or Streamlit secrets (st.secrets["GEMINI_API_KEY"]).
+    """
+    if api_key:
+        return api_key
+    if os.environ.get("GEMINI_API_KEY"):
+        return os.environ.get("GEMINI_API_KEY")
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
+            return st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
+    return None
+
 SYSTEM_PROMPT = """You are a specialized cryptocurrency market-analysis assistant.
 Use ONLY the supplied evidence JSON to summarize observed market movements and sentiment.
 
@@ -47,7 +71,7 @@ def generate_evidence_grounded_summary(evidence=None, api_key=None):
     if not evidence:
         return "Insufficient analytical evidence available for the selected period."
 
-    key = api_key or os.environ.get("GEMINI_API_KEY")
+    key = get_gemini_api_key(api_key)
 
     if key:
         try:
@@ -120,7 +144,7 @@ def generate_live_daily_opinion(live_evidence=None, api_key=None):
     if not live_evidence:
         return "Live market evidence unavailable at this moment."
 
-    key = api_key or os.environ.get("GEMINI_API_KEY")
+    key = get_gemini_api_key(api_key)
 
     if key:
         try:
@@ -185,7 +209,7 @@ def generate_prediction_explanation(pred_evidence, api_key=None):
     if not pred_evidence:
         return "Prediction evidence unavailable."
 
-    key = api_key or os.environ.get("GEMINI_API_KEY")
+    key = get_gemini_api_key(api_key)
 
     if key:
         try:

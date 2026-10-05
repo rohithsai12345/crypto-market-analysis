@@ -101,10 +101,10 @@ def check_model_drift(history_file=None):
                 "message": "At least 5 resolved predictions required for rolling drift tracking."
             }
 
-        resolved_df["correct"] = resolved_df["predicted_label"] == resolved_df["actual_label"]
+        resolved_df["correct"] = resolved_df["predicted_direction"] == resolved_df["actual_direction"]
         recent_acc = resolved_df["correct"].mean()
 
-        neutral_baseline_acc = (resolved_df["actual_label"] == "NEUTRAL").mean()
+        neutral_baseline_acc = (resolved_df["actual_direction"] == "NEUTRAL").mean()
 
         drift_report = {
             "status": "MONITORING",

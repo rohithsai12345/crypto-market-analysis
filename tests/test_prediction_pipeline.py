@@ -217,10 +217,31 @@ class TestPredictionPipelineIsolated(unittest.TestCase):
         self.assertIn("dataset_freshness", health)
         self.assertIn("model_drift", health)
 
-        # Test model drift on a mock prediction history file in temporary folder
+        # Test model drift on a mock prediction history file in temporary folder using actual production CSV schema
         mock_hist_file = self.pred_dir / "prediction_history.csv"
         df_hist = pd.DataFrame([
-            {"timestamp": f"2024-01-0{i}", "asset": "BTC", "predicted_label": "BULLISH", "actual_label": "BULLISH", "status": "RESOLVED"}
+            {
+                "prediction_id": f"BTC_2024010{i}_120000",
+                "timestamp": f"2024-01-0{i} 12:00:00",
+                "asset": "BTC",
+                "prediction_horizon": "Predict BTC's next 24-hour direction",
+                "current_price": 40000.0,
+                "predicted_direction": "BULLISH",
+                "prob_bullish": 0.6,
+                "prob_neutral": 0.3,
+                "prob_bearish": 0.1,
+                "confidence": 0.6,
+                "model_version": "v1",
+                "model_name": "Random Forest",
+                "data_status": "LIVE",
+                "status": "RESOLVED",
+                "actual_price": 41000.0,
+                "actual_return": 0.025,
+                "actual_direction": "BULLISH",
+                "correct": True,
+                "resolution_timestamp": f"2024-01-0{i+1} 12:00:00",
+                "conviction_level": "HIGH"
+            }
             for i in range(1, 6)
         ])
         df_hist.to_csv(mock_hist_file, index=False)

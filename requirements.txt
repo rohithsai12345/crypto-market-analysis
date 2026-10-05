@@ -16,5 +16,7 @@ torch==2.14.0
 transformers==5.17.0
 
 # Generative AI & Market Data
+google-genai==2.28.0
+python-dotenv==1.2.4
 requests==2.34.2
 websockets==16.1.1

@@ -132,7 +132,7 @@ def train_and_select_predictive_model(asset="BTC", dataset_file=None, promote_to
         subsample=0.75, colsample_bytree=0.75, reg_alpha=0.2, reg_lambda=1.5,
         random_state=42, class_weight="balanced", verbosity=-1, n_jobs=2
     )
-    lr_tuned = LogisticRegression(C=0.1, max_iter=1000, penalty="l2", random_state=42, class_weight="balanced")
+    lr_tuned = LogisticRegression(C=0.1, max_iter=1000, random_state=42, class_weight="balanced")
 
     candidates = {
         "Random Forest (Entropy Tuned)": (rf_tuned, False),
