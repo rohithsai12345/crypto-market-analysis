@@ -1,0 +1,21 @@
+# Core Machine Learning & Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+lightgbm>=4.0.0
+joblib>=1.3.0
+
+# Dashboard & Interactive Visualization
+streamlit>=1.30.0
+streamlit-autorefresh>=1.0.0
+plotly>=5.18.0
+
+# Natural Language Processing & Deep Learning
+torch>=2.0.0
+transformers>=4.35.0
+
+# Generative AI & Market Data
+google-genai>=0.1.0
+requests>=2.31.0
+websocket-client>=1.7.0

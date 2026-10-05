@@ -1,0 +1,11 @@
+relationship,x_variable,y_variable,n,pearson_r,p_value,ci_95_low,ci_95_high,significance_0_05,significance_0_01
+Daily sentiment vs BTC return,avg_sentiment,btc_return,1596,0.1549892727174653,4.827427901887022e-10,0.1067328759730547,0.20251722663369637,True,True
+Daily sentiment vs ETH return,avg_sentiment,eth_return,1596,0.14327732009584318,8.970644512459418e-09,0.09487622941779388,0.191002609030691,True,True
+Daily sentiment vs BTC volume,avg_sentiment,btc_volume,1597,0.061687931227841886,0.013677596472961089,0.012673546668050146,0.110406579374279,True,False
+Daily sentiment vs ETH volume,avg_sentiment,eth_volume,1597,0.06176364893148366,0.013562259147663479,0.012749541683540588,0.11048165954160633,True,False
+Previous-day sentiment vs next-day BTC return,sentiment_lag_1,btc_return_next_day,1595,-0.02316930803763519,0.35511063793448366,-0.07217072039179052,0.02594368300188038,False,False
+Previous-day sentiment vs next-day ETH return,sentiment_lag_1,eth_return_next_day,1595,-0.020767615594905683,0.4071922464360846,-0.06977997268333451,0.028344764649365906,False,False
+2-day lag sentiment vs next-day BTC return,sentiment_lag_2,btc_return_next_day,1594,-0.0436670956209121,0.0813564304198278,-0.09256751557154375,0.005443460422516514,False,False
+3-day lag sentiment vs next-day BTC return,sentiment_lag_3,btc_return_next_day,1593,0.011657297428549162,0.6419877878998568,-0.03747845836072421,0.06073682104388288,False,False
+News volume vs BTC absolute return,news_count,btc_abs_return,1596,0.14799341836866015,2.842596479430286e-09,0.09964894126929748,0.19564082579011227,True,True
+News volume vs ETH absolute return,news_count,eth_abs_return,1596,0.1473064335877241,3.3683484863267175e-09,0.09895357125078721,0.19496531847251097,True,True

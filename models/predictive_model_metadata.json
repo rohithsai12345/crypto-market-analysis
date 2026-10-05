@@ -1,0 +1,130 @@
+{
+  "model_name": "ExtraTrees (Tuned)",
+  "is_scaled": false,
+  "training_timestamp": "20261005_183428",
+  "bullish_threshold": 0.01,
+  "bearish_threshold": -0.01,
+  "feature_schema": [
+    "btc_close",
+    "btc_return",
+    "btc_volume",
+    "btc_volatility",
+    "eth_close",
+    "eth_return",
+    "eth_volume",
+    "btc_eth_ratio_return",
+    "btc_rsi_14",
+    "btc_macd",
+    "btc_macd_signal",
+    "btc_macd_hist",
+    "btc_ema_ratio_7_25",
+    "btc_ema_ratio_25_90",
+    "btc_bb_percent_b",
+    "btc_high_low_ratio",
+    "btc_parkinson_vol",
+    "btc_volume_zscore_20d",
+    "btc_stoch_k",
+    "btc_stoch_d",
+    "btc_sma_ratio_50_200",
+    "btc_roc_5d",
+    "btc_roc_14d",
+    "avg_sentiment",
+    "positive_ratio",
+    "neutral_ratio",
+    "negative_ratio",
+    "pos_neg_sentiment_ratio",
+    "news_count",
+    "avg_finbert_confidence",
+    "sentiment_zscore_14d",
+    "sentiment_return_interaction",
+    "sentiment_lag_1",
+    "sentiment_lag_2",
+    "sentiment_lag_3",
+    "sentiment_momentum_3d",
+    "rolling_sentiment_3d",
+    "rolling_sentiment_7d",
+    "rolling_sentiment_14d",
+    "sentiment_std_7d",
+    "btc_return_lag_1",
+    "btc_return_lag_2",
+    "btc_return_lag_3",
+    "eth_return_lag_1",
+    "news_count_lag_1",
+    "rolling_return_3d",
+    "rolling_return_7d",
+    "rolling_return_14d",
+    "rolling_volatility_7d",
+    "rolling_volatility_14d",
+    "news_volume_change_7d",
+    "btc_volume_change_7d"
+  ],
+  "class_mapping": {
+    "BEARISH": 0,
+    "NEUTRAL": 1,
+    "BULLISH": 2
+  },
+  "date_ranges": {
+    "train": "2021-01-05 to 2025-01-12",
+    "validation": "2025-01-13 to 2025-11-23",
+    "test": "2025-11-24 to 2026-10-04"
+  },
+  "metrics": {
+    "val_accuracy": 0.44761904761904764,
+    "val_f1": 0.438217318446273,
+    "test_accuracy": 0.4158730158730159,
+    "test_f1": 0.39660918317628235,
+    "test_precision": 0.3913032361584855,
+    "test_recall": 0.4158730158730159
+  },
+  "all_candidate_metrics": {
+    "Random Forest (Entropy Tuned)": {
+      "val_accuracy": 0.3904761904761905,
+      "val_f1": 0.3953820978563246,
+      "val_precision": 0.4074266474266474,
+      "val_recall": 0.3904761904761905
+    },
+    "ExtraTrees (Tuned)": {
+      "val_accuracy": 0.44761904761904764,
+      "val_f1": 0.438217318446273,
+      "val_precision": 0.43337873508605224,
+      "val_recall": 0.44761904761904764
+    },
+    "HistGradientBoosting (Regularized)": {
+      "val_accuracy": 0.3047619047619048,
+      "val_f1": 0.2897553330599625,
+      "val_precision": 0.34974867724867725,
+      "val_recall": 0.3047619047619048
+    },
+    "XGBoost (Tuned)": {
+      "val_accuracy": 0.3873015873015873,
+      "val_f1": 0.3897342602458686,
+      "val_precision": 0.4131929603448591,
+      "val_recall": 0.3873015873015873
+    },
+    "LightGBM (Tuned)": {
+      "val_accuracy": 0.30793650793650795,
+      "val_f1": 0.2884600040140388,
+      "val_precision": 0.35536423204528983,
+      "val_recall": 0.30793650793650795
+    },
+    "Logistic Regression (L2 Tuned)": {
+      "val_accuracy": 0.2761904761904762,
+      "val_f1": 0.16525375500293335,
+      "val_precision": 0.40455999751498767,
+      "val_recall": 0.2761904761904762
+    },
+    "Soft Voting Ensemble": {
+      "val_accuracy": 0.3523809523809524,
+      "val_f1": 0.32176973843438733,
+      "val_precision": 0.41619637729413284,
+      "val_recall": 0.3523809523809524
+    },
+    "Stacking Meta-Learner": {
+      "val_accuracy": 0.3492063492063492,
+      "val_f1": 0.33036815514084666,
+      "val_precision": 0.3250621006683723,
+      "val_recall": 0.3492063492063492
+    }
+  },
+  "model_version": "model_20261005_183428.joblib"
+}

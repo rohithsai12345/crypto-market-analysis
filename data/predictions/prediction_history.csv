@@ -1,0 +1,5 @@
+prediction_id,timestamp,asset,prediction_horizon,current_price,predicted_direction,prob_bullish,prob_neutral,prob_bearish,confidence,model_version,model_name,data_status,status,actual_price,actual_return,actual_direction,correct,resolution_timestamp,conviction_level
+BTC_20261001_120000,2026-10-01 12:00:00,BTC,1D,84200.0,BULLISH,0.45,0.3,0.25,0.45,model_20261005_013341.joblib,Random Forest (Tuned),LIVE,RESOLVED,84518.01,0.38,NEUTRAL,False,2026-10-05 01:44:35,
+BTC_20261002_120000,2026-10-02 12:00:00,BTC,1D,85100.0,NEUTRAL,0.28,0.44,0.28,0.44,model_20261005_013341.joblib,Random Forest (Tuned),LIVE,RESOLVED,84753.56,-0.41,NEUTRAL,True,2026-10-05 01:44:35,
+BTC_20261003_120000,2026-10-03 12:00:00,BTC,1D,85400.0,BEARISH,0.2,0.35,0.45,0.45,model_20261005_013341.joblib,Random Forest (Tuned),LIVE,RESOLVED,85453.78,0.06,NEUTRAL,False,2026-10-05 01:44:35,
+BTC_20261005_183411,2026-10-05 18:34:11,BTC,Today (Same-Day),86094.01,NEUTRAL,0.2925,0.4131,0.2944,0.4131,model_20261005_183335.joblib,ExtraTrees (Tuned),LIVE,PENDING,,,,,,MODERATE (Clear Trend)

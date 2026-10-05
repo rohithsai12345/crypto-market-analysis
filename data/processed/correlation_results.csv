@@ -1,0 +1,11 @@
+relationship,x,y,correlation
+Daily sentiment vs BTC return,avg_sentiment,btc_return,0.1549892727174653
+Daily sentiment vs ETH return,avg_sentiment,eth_return,0.14327732009584307
+Daily sentiment vs BTC volume,avg_sentiment,btc_volume,0.061687931227841906
+Daily sentiment vs ETH volume,avg_sentiment,eth_volume,0.06176364893148369
+Previous-day sentiment vs BTC next-day return,sentiment_lag_1,btc_return_next_day,-0.023169308037635172
+Previous-day sentiment vs ETH next-day return,sentiment_lag_1,eth_return_next_day,-0.02076761559490565
+2-day lag sentiment vs BTC return,sentiment_lag_2,btc_return_next_day,-0.04366709562091214
+3-day lag sentiment vs BTC return,sentiment_lag_3,btc_return_next_day,0.011657297428549148
+News volume vs BTC absolute return,news_count,btc_abs_return,0.14799341836866026
+News volume vs ETH absolute return,news_count,eth_abs_return,0.14730643358772413
