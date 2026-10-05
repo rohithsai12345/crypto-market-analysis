@@ -30,6 +30,11 @@ env/
 env.bak/
 venv.bak/
 
+# Model Checkpoints & Large Binary Artifacts
+*.joblib
+models/*.joblib
+models/versions/*.joblib
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
